@@ -1,6 +1,6 @@
 // Einkauf PWA: lokale Grunddateien vorhalten. Externe Firebase-/OCR-Skripte
 // werden bewusst NICHT zwischengespeichert.
-const CACHE = 'einkauf-marpet-2026-11-09-v1';
+const CACHE = 'einkauf-marpet-2026-11-09-google-v2';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './qr.js',
   './firebase-config.js', './manifest.webmanifest',
