@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#f7f6ef">
+<meta name="theme-color" content="#234331">
 <meta name="description" content="Einkauf: deine gemeinsame, praktische Einkaufsliste im Bento-Design.">
 
 <link rel="icon" type="image/svg+xml" href="./icon.svg">
@@ -14,44 +14,8 @@
 </head>
 <body>
 <div id="app">
-  <header class="top">
-    <div class="brand-line"><span class="brand-mark">e<span>.</span></span><button id="settingsBtn" class="icon-only" aria-label="Einstellungen und Backup" title="Einstellungen">⚙</button></div>
-    <p class="eyebrow">UNSER EINKAUF</p>
-    <h1>Alles auf der Liste<span class="dot">.</span></h1>
-    <p class="subtitle">Zusammen planen, entspannt einkaufen.</p>
-  </header>
-  <main>
-    <section class="hero tile" aria-label="Aktuelle Einkaufsliste">
-      <div class="hero-head"><span class="eyebrow light-label">AKTIVE LISTE</span><span id="connectionBadge" class="status-pill">● Offline</span></div>
-      <div class="hero-main"><div><h2 id="heroName">Wocheneinkauf</h2><p id="heroStore">Alle Geschäfte</p></div><span class="hero-letter" aria-hidden="true">e.</span></div>
-      <div class="hero-foot"><strong id="heroProgress">0 / 0</strong><span>Artikel erledigt</span><div class="progressbar"><div id="progressFill"></div></div></div>
-    </section>
-
-    <section class="lists-section">
-      <div class="section-heading"><div><span class="eyebrow">DEINE LISTEN</span><h2>Übersicht</h2></div><button id="newListBtn" class="add-round" aria-label="Neue Liste erstellen">+</button></div>
-      <div class="tabs" id="listTabs" role="tablist" aria-label="Einkaufslisten"></div>
-      <div class="list-tools"><div><h3 id="activeListTitle">Wocheneinkauf</h3><p id="listDescription">Tippe auf einen Artikel zum Bearbeiten</p></div><button id="listMenuBtn" class="icon-only more-btn" title="Liste bearbeiten">⋯</button></div>
-      <div id="items" class="items" aria-live="polite"></div>
-      <p class="empty" id="emptyMessage" hidden>Deine Liste ist noch leer.<br>Füge den ersten Artikel hinzu oder scanne einen Zettel.</p>
-      <div class="done-section" id="doneSection" hidden><button class="done-toggle" id="doneToggle">Erledigt <span id="doneCount">0</span><span id="doneArrow">⌄</span></button><div id="doneItems" class="items done-items"></div></div>
-      <form id="quickAddForm" class="quick-add"><input id="newItemText" maxlength="140" placeholder="z. B. 2 Liter Milch" autocomplete="off" aria-label="Neuer Artikel"><button type="submit" aria-label="Artikel hinzufügen">+</button></form>
-    </section>
-
-    <div class="twin">
-      <button id="scanBtn" class="tile action-tile"><span class="tile-symbol scan-symbol">▣</span><span class="action-title">Zettel scannen</span><span class="action-note">Foto → Checkliste</span><span class="tile-chevron">↗</span></button>
-      <button id="pairBtn" class="tile action-tile"><span class="tile-symbol qr-symbol">▦</span><span class="action-title">Gemeinsam</span><span class="action-note">Per QR verbinden</span><span class="tile-chevron">↗</span></button>
-    </div>
-
-    <section class="tile export-tile"><div class="export-icon">↗</div><div class="export-copy"><h3>Liste weitergeben</h3><p>Kopieren & bei Gurkerl einfügen</p></div><button id="exportBtn" class="icon-only export-more" aria-label="Weitere Exportmöglichkeiten" title="Weitere Exportmöglichkeiten">⋯</button><button id="copyBtn" class="small-dark">Kopieren <span>⧉</span></button></section>
-
-    <button id="recipeImportBtn" class="tile recipe-tile" type="button" aria-label="Zutaten aus Rezept übernehmen">
-      <span class="recipe-icon" aria-hidden="true">♧</span>
-      <span class="recipe-copy"><strong>Aus Rezept übernehmen</strong><span>Zutaten einfügen und in deine Liste übertragen</span></span>
-      <span class="recipe-chevron" aria-hidden="true">↗</span>
-    </button>
-
-    <footer>einfach einkaufen<span class="dot">.</span> <span id="saveStatus">Lokal gespeichert</span></footer>
-  </main>
+  <header class="app-header"><img src="./icon-192.png" alt="Einkauf" class="app-logo"><button id="settingsBtn" class="settings-white" aria-label="Einstellungen und Backup"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m9 3-.6 2.2-2 .9-2-.7-2 3.4 1.6 1.6v2.3L2.4 14l2 3.4 2.1-.6 2 .9L9 20h4l.6-2.3 2-.9 2.1.6 2-3.4-1.6-1.3v-2.3L19.7 9l-2-3.5-2.1.6-2-.9L13 3Z"/><circle cx="11" cy="11.5" r="3.2"/></svg></button></header>
+  <main class="bento-main"><div class="new-list-row"><button id="newListBtn" class="new-list-button">+ Neue Liste</button></div><section id="listCards" aria-label="Deine Einkaufslisten"></section><footer><span id="saveStatus">Lokal gespeichert</span></footer></main>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
 <div class="overlay" id="overlay" hidden><div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><div class="modal-header"><h2 id="modalTitle"></h2><button class="close-modal" id="closeModal" aria-label="Schließen">×</button></div><div id="modalBody"></div></div></div>
