@@ -1,0 +1,195 @@
+/* Einkauf — eine kleine, offline-first Listen-App im Wohin-Stil.
+   Lizenz: Eigener Beispielcode. Firebase ist optional; ohne Konfiguration lokal nutzbar.
+   Datenmodell v1; ausschließlich einzelne Artikel für konfliktarme Synchronisierung. */
+(()=>{
+'use strict';
+const KEY='einkauf.bento.v1';
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid=()=>crypto.randomUUID?crypto.randomUUID():`${Date.now()}-${Math.random().toString(36).slice(2)}`;
+const STORES=['Alle Geschäfte','Gurkerl','Hofer','Billa','Spar','Lidl','Bipa','dm','Müller','OBI'];
+const storeOptions=()=>STORES.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('');
+const initial=()=>({version:1,activeId:'woche',lists:[{id:'woche',name:'Wocheneinkauf',store:'Alle Geschäfte',sharedId:null},{id:'gurkerl',name:'Gurkerl',store:'Gurkerl',sharedId:null}],items:[],pending:[],entryBuffer:null});
+let state=load(), showDone=false, firebaseReady=false, firebaseBusy=false, cloud=null, cloudUser=null, cloudError='',listeners=new Map(), scanStream=null,qrLoop=0,notifyTimer=null;
+function load(){try{const a=JSON.parse(localStorage.getItem(KEY)); if(a && a.version===1 && Array.isArray(a.lists)&&Array.isArray(a.items))return {...initial(),...a,pending:Array.isArray(a.pending)?a.pending:[]};}catch(e){}return initial();}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(state));$('#saveStatus').textContent='Lokal gespeichert';}catch(e){$('#saveStatus').textContent='Achtung: Speichern im Browser gesperrt';}}
+function alertToast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('visible');clearTimeout(notifyTimer);notifyTimer=setTimeout(()=>t.classList.remove('visible'),2800);}
+function active(){return state.lists.find(x=>x.id===state.activeId)||state.lists[0];}
+function listItems(id){return state.items.filter(x=>x.listId===id);}
+function openModal(title,content){$('#modalTitle').textContent=title;$('#modalBody').innerHTML=content;$('#overlay').hidden=false;}
+function closeModal(){stopScan();$('#overlay').hidden=true;$('#modalBody').innerHTML='';}
+function formVal(name){return document.querySelector(`[name="${name}"]`)?.value?.trim()||'';}
+function render(){let a=active();if(!a){state=initial();a=active();save();}
+ const all=listItems(a.id),done=all.filter(x=>x.done),todo=all.filter(x=>!x.done);$('#heroName').textContent=a.name;$('#heroStore').textContent=a.store||'Alle Geschäfte';$('#heroProgress').textContent=`${done.length} / ${all.length}`;$('#progressFill').style.width=(all.length?done.length/all.length*100:0)+'%';
+ $('#activeListTitle').textContent=a.name;$('#listDescription').textContent=a.sharedId?'Gemeinsame Liste · Änderungen werden synchronisiert':'Privat · auf deinem Gerät';
+ $('#connectionBadge').textContent=a.sharedId?(cloudUser?(navigator.onLine?'● Gemeinsam':'◌ Offline – gemerkt'):'◌ Synchronisierung aus'):'● Privat';
+ $('#listTabs').innerHTML=state.lists.map(l=>`<button class="tab" role="tab" data-act="switch" data-id="${esc(l.id)}" aria-selected="${l.id===a.id}">${esc(l.name)}${l.sharedId?' ↗':''}<span class="count">${listItems(l.id).filter(i=>!i.done).length}</span></button>`).join('');
+ $('#items').innerHTML=todo.map(itemHTML).join('');$('#emptyMessage').hidden=todo.length>0||done.length>0;
+ $('#doneCount').textContent=done.length;$('#doneSection').hidden=!done.length;$('#doneItems').hidden=!showDone;$('#doneArrow').textContent=showDone?'⌃':'⌄';$('#doneItems').innerHTML=done.map(itemHTML).join('');
+ $('#pairBtn').querySelector('.action-note').textContent=a.sharedId?'Mit Partner verbunden':'Per QR verbinden';
+}
+function itemHTML(x){return `<div class="item ${x.done?'done':''}" data-id="${esc(x.id)}"><button class="check ${x.done?'checked':''}" data-act="toggle" data-id="${esc(x.id)}" aria-label="${x.done?'Nicht erledigt':'Erledigt'}">${x.done?'✓':''}</button><button class="item-main" data-act="edit" data-id="${esc(x.id)}">${esc(x.text)}${x.amount?`<em>${esc(x.amount)}</em>`:''}</button><button class="item-edit" data-act="edit" data-id="${esc(x.id)}" aria-label="Bearbeiten">⋯</button></div>`;}
+function persist(){save();render();}
+function useList(id){if(state.lists.some(x=>x.id===id)){state.activeId=id;persist();}}
+function addItem(text,amount=''){const a=active(),t=text.trim();if(!t)return;const parsed=splitQuantity(t);let item={id:uid(),listId:a.id,text:(amount?t:parsed.text).slice(0,140),amount:String(amount||parsed.amount).trim().slice(0,100),done:false,updatedAt:Date.now()};state.items.push(item);persist();syncItem(a,item,'set');}
+function editItem(id,text,amount){const item=state.items.find(i=>i.id===id);if(!item||!text.trim())return;item.text=text.trim().slice(0,140);item.amount=amount.trim().slice(0,100);item.updatedAt=Date.now();persist();syncItem(state.lists.find(l=>l.id===item.listId),item,'set');}
+function toggleItem(id){const item=state.items.find(x=>x.id===id);if(!item)return;item.done=!item.done;item.updatedAt=Date.now();persist();syncItem(state.lists.find(l=>l.id===item.listId),item,'set');}
+function deleteItem(id){const item=state.items.find(x=>x.id===id);if(!item)return;const l=state.lists.find(x=>x.id===item.listId);state.items=state.items.filter(x=>x.id!==id);persist();syncItem(l,item,'delete');}
+function moveItem(id,targetListId){const item=state.items.find(x=>x.id===id),oldList=state.lists.find(x=>x.id===item?.listId),dest=state.lists.find(x=>x.id===targetListId);if(!item||!dest||!oldList||oldList.id===dest.id)return;syncItem(oldList,item,'delete');item.listId=dest.id;item.updatedAt=Date.now();syncItem(dest,item,'set');persist();alertToast('Artikel in „'+dest.name+'“ verschoben');}
+function createList(name,store){if(!name.trim())return;const l={id:uid(),name:name.trim().slice(0,70),store:store.trim().slice(0,60)||'Alle Geschäfte',sharedId:null};state.lists.push(l);state.activeId=l.id;persist();}
+function newListModal(){
+ openModal('Neue Einkaufsliste',`<form id="listForm"><label class="field">Name der Liste<input name="name" placeholder="z. B. Wocheneinkauf" maxlength="70" required autofocus></label><label class="field">Geschäft<select name="store" id="newStore">${storeOptions()}<option value="__custom__">Anderes Geschäft …</option></select></label><label class="field hidden" id="customStoreLabel">Geschäft eingeben<input name="customStore" maxlength="60" placeholder="z. B. Wochenmarkt"></label><div class="modal-actions"><button class="primary wide" type="submit">Liste erstellen</button></div></form>`);
+ const storeSelect=$('#newStore'), customLabel=$('#customStoreLabel');
+ storeSelect.onchange=()=>{customLabel.classList.toggle('hidden',storeSelect.value!=='__custom__');if(!customLabel.classList.contains('hidden'))customLabel.querySelector('input').focus();};
+ $('#listForm').onsubmit=e=>{e.preventDefault();const store=storeSelect.value==='__custom__'?formVal('customStore'):storeSelect.value;if(!store){alertToast('Bitte ein Geschäft eingeben');return;}createList(formVal('name'),store);closeModal();alertToast('Liste erstellt');};
+}
+function itemModal(id){const x=state.items.find(z=>z.id===id);if(!x)return;const otherListOptions=state.lists.map(l=>`<option value="${esc(l.id)}" ${l.id===x.listId?'selected':''}>${esc(l.name)} (${esc(l.store)})</option>`).join('');openModal('Artikel bearbeiten',`<form id="itemForm"><label class="field">Artikel<input name="name" value="${esc(x.text)}" maxlength="140" required></label><label class="field">Menge oder Hinweis<input name="amount" value="${esc(x.amount)}" maxlength="100" placeholder="z. B. 2 Liter, Marke …"></label><label class="field">Einkaufsliste / Geschäft<select name="targetList">${otherListOptions}</select></label><div class="modal-actions"><button class="primary" type="submit">Speichern</button><button class="danger" id="deleteItemBtn" type="button">Löschen</button></div></form>`);$('#itemForm').onsubmit=e=>{e.preventDefault();editItem(id,formVal('name'),formVal('amount'));const dest=formVal('targetList');if(dest && dest!==x.listId)moveItem(id,dest);closeModal();};$('#deleteItemBtn').onclick=()=>{if(confirm('Artikel löschen?')){deleteItem(id);closeModal();}};}
+function listModal(){let l=active();openModal('Liste verwalten',`
+<div class="list-menu-grid">
+  <button id="syncListBtn" class="menu-action" type="button"><span>♧</span> Liste mit Partnerin verbinden <small>QR-Code / Synchronisierung</small></button>
+  <button id="cloneListBtn" class="menu-action" type="button"><span>▤</span> Liste klonen <small>Eine private Kopie für den nächsten Einkauf</small></button>
+  <button id="copyEntriesBtn" class="menu-action" type="button"><span>⧉</span> Offene Einträge kopieren</button>
+  <button id="cutEntriesBtn" class="menu-action" type="button"><span>↗</span> Offene Einträge verschieben <small>Dann andere Liste auswählen und einfügen</small></button>
+  <button id="pasteEntriesBtn" class="menu-action" type="button"><span>↙</span> Einträge einfügen <small>Aus anderer Liste oder als Text</small></button>
+  <button id="shareEntriesBtn" class="menu-action" type="button"><span>◇</span> Einträge teilen <small>Über das Android-Teilen-Menü</small></button>
+  <button id="exportFromMenuBtn" class="menu-action" type="button"><span>⇧</span> Export für Gurkerl <small>Liste kopieren, Text oder CSV</small></button>
+</div>
+<hr class="divider">
+<form id="listEditForm"><label class="field">Listenname<input name="name" maxlength="70" value="${esc(l.name)}" required></label><label class="field">Geschäft<input name="store" list="storeSuggestions" maxlength="60" value="${esc(l.store)}" autocomplete="off"><datalist id="storeSuggestions">${storeOptions()}</datalist></label><div class="modal-actions"><button class="primary" type="submit">Namen speichern</button><button class="secondary" id="clearDoneBtn" type="button">Erledigte entfernen</button></div></form>
+<hr class="divider"><button class="danger" id="clearListBtn" type="button">Liste leeren</button> <button class="danger" id="deleteListBtn" type="button">Liste löschen</button>
+<p class="info">Bei einer geteilten Liste sehen alle verbundenen Personen Änderungen an den Artikeln. Synchronisierung funktioniert erst nach der Firebase-Einrichtung.</p>`);
+ $('#listEditForm').onsubmit=e=>{e.preventDefault();l.name=formVal('name').slice(0,70);l.store=formVal('store').slice(0,60)||'Alle Geschäfte';persist();syncMeta(l);closeModal();};
+ $('#clearDoneBtn').onclick=()=>{const done=listItems(l.id).filter(i=>i.done);if(!done.length){alertToast('Nichts zu entfernen');return;}if(confirm(`${done.length} erledigte Artikel löschen?`)){done.forEach(i=>{state.items=state.items.filter(z=>z.id!==i.id);syncItem(l,i,'delete');});persist();closeModal();}};
+ $('#deleteListBtn').onclick=()=>{if(state.lists.length===1){alertToast('Mindestens eine Liste behalten');return;}if(confirm('Liste wirklich von diesem Gerät entfernen?')){stopListen(l.sharedId);state.lists=state.lists.filter(z=>z.id!==l.id);state.items=state.items.filter(z=>z.listId!==l.id);state.activeId=state.lists[0].id;persist();closeModal();}};
+ $('#cloneListBtn').onclick=cloneCurrentList;
+ $('#clearListBtn').onclick=clearCurrentList;
+ $('#copyEntriesBtn').onclick=()=>rememberEntries('copy');
+ $('#cutEntriesBtn').onclick=()=>rememberEntries('cut');
+ $('#pasteEntriesBtn').onclick=pasteEntries;
+ $('#shareEntriesBtn').onclick=shareEntries;
+ $('#syncListBtn').onclick=()=>{closeModal();pairModal();};
+ $('#exportFromMenuBtn').onclick=()=>{closeModal();exportModal();};
+}
+// Die folgenden Aktionen sind eigenständig implementiert, nicht aus der Referenz-App kopiert.
+function cloneCurrentList(){
+ const source=active();
+ const target={id:uid(),name:(source.name+' (Kopie)').slice(0,70),store:source.store||'Alle Geschäfte',sharedId:null};
+ const copied=listItems(source.id).map(i=>({id:uid(),listId:target.id,text:i.text,amount:i.amount||'',done:false,updatedAt:Date.now()}));
+ state.lists.push(target);state.items.push(...copied);state.activeId=target.id;
+ persist();closeModal();alertToast('Private Kopie mit '+copied.length+' Artikeln erstellt');
+}
+function clearCurrentList(){
+ const l=active(),items=listItems(l.id);
+ if(!items.length){alertToast('Liste ist bereits leer');return;}
+ if(!confirm('Alle '+items.length+' Artikel aus „'+l.name+'“ löschen?'))return;
+ for(const item of items)syncItem(l,item,'delete');
+ state.items=state.items.filter(i=>i.listId!==l.id);
+ persist();closeModal();alertToast('Liste geleert');
+}
+function rememberEntries(mode){
+ const l=active();const items=listItems(l.id).filter(i=>!i.done);
+ if(!items.length){alertToast('Keine offenen Einträge');return;}
+ state.entryBuffer={mode,sourceId:l.id,items:items.map(i=>({id:i.id,text:i.text,amount:i.amount||''}))};
+ save();closeModal();
+ if(mode==='cut')alertToast(items.length+' Einträge zum Verschieben vorgemerkt');
+ else{clipboardText(textFor(l)).then(()=>alertToast(items.length+' Einträge kopiert')).catch(()=>alertToast('Für andere Listen vorgemerkt'));}
+}
+function pasteEntries(){
+ const dest=active(),buffer=state.entryBuffer;
+ if(!buffer?.items?.length){closeModal();recipeImportModal();return;}
+ let count=0,skipped=0;
+ const seen=new Set(listItems(dest.id).filter(i=>!i.done).map(i=>`${i.text.toLocaleLowerCase('de').trim()}|${(i.amount||'').toLocaleLowerCase('de').trim()}`));
+ for(const original of buffer.items){
+   const key=`${original.text.toLocaleLowerCase('de').trim()}|${original.amount.toLocaleLowerCase('de').trim()}`;
+   if(seen.has(key)){skipped++;continue;}
+   if(buffer.mode==='cut'){
+     const current=state.items.find(i=>i.id===original.id && i.listId===buffer.sourceId);
+     if(!current){skipped++;continue;}
+     if(current.listId!==dest.id){const src=state.lists.find(l=>l.id===current.listId);syncItem(src,current,'delete');current.listId=dest.id;current.updatedAt=Date.now();syncItem(dest,current,'set');}
+   } else {
+     const item={id:uid(),listId:dest.id,text:original.text,amount:original.amount,done:false,updatedAt:Date.now()};
+     state.items.push(item);syncItem(dest,item,'set');
+   }
+   seen.add(key);count++;
+ }
+ if(buffer.mode==='cut' && skipped===0)state.entryBuffer=null;
+ persist();closeModal();alertToast(`${count} Einträge eingefügt${skipped?' · '+skipped+' übersprungen':''}`);
+}
+async function shareEntries(){
+ const l=active(),text=textFor(l);
+ if(!text){alertToast('Keine offenen Einträge');return;}
+ const message=l.name+' ('+l.store+')\n\n'+text;
+ closeModal();
+ if(window.AndroidEinkauf?.shareText){window.AndroidEinkauf.shareText(message);return;}
+ if(navigator.share){try{await navigator.share({title:l.name,text:message});}catch(e){}return;}
+ try{await clipboardText(message);alertToast('Einträge zum Teilen kopiert');}catch(e){alertToast('Teilen nicht verfügbar');}
+}
+function cleanLines(text){return String(text||'').replace(/\r/g,'').split('\n').map(s=>s.replace(/^\s*(?:[-•*☐☑✓]\s*|\d{1,3}[.)]\s+)/,'').replace(/[\s\-]+$/,'').trim()).filter(x=>x.length>0&&x.length<170).slice(0,150);}
+function splitQuantity(raw){const s=String(raw||'').trim();const prefix=s.match(/^(\d+(?:[,.]\d+)?\s*(?:kg|g|l|liter|ml|stk\.?|st\.?|packungen?|stück|x|becher|flaschen?|dosen?|bund|päckchen|el|tl))\s+(.+)$/i);if(prefix)return {amount:prefix[1].trim(),text:prefix[2].trim()};const simple=s.match(/^(\d+(?:[,.]\d+)?)\s*[x×]\s+(.+)$/i);if(simple)return {amount:simple[1]+' ×',text:simple[2].trim()};const numeric=s.match(/^(\d+(?:[,.]\d+)?)\s+(.+)$/);if(numeric)return {amount:numeric[1],text:numeric[2].trim()};return {amount:'',text:s};}
+function addMultiple(raw){const lines=cleanLines(raw),l=active();let added=0,skipped=0;const seen=new Set(listItems(l.id).filter(i=>!i.done).map(i=>`${i.text.toLocaleLowerCase('de').trim()}|${i.amount.toLocaleLowerCase('de').trim()}`));for(const line of lines){const parsed=splitQuantity(line);const key=`${parsed.text.toLocaleLowerCase('de').trim()}|${parsed.amount.toLocaleLowerCase('de').trim()}`;if(seen.has(key)){skipped++;continue;}seen.add(key);const item={id:uid(),listId:l.id,text:parsed.text.slice(0,140),amount:parsed.amount.slice(0,100),done:false,updatedAt:Date.now()};state.items.push(item);syncItem(l,item,'set');added++;}persist();if(skipped)alertToast(`${skipped} doppelte Artikel übersprungen`);return added;}
+function textFor(list,openOnly=true){const items=listItems(list.id).filter(x=>!openOnly||!x.done);return items.map(x=>`${x.amount?x.amount+' ':''}${x.text}`).join('\n');}
+async function copyCurrent(){let t=textFor(active());if(!t){alertToast('Keine offenen Artikel zum Kopieren');return;}const full=`Finde bitte möglichst günstige passende Produkte für diese Einkaufsliste und füge sie meinem Warenkorb hinzu. Vergleiche den Grundpreis, beachte Mengen und frage bei Unklarheiten nach:\n\n${t}`;try{if(window.AndroidEinkauf?.copyText){window.AndroidEinkauf.copyText(full);}else if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(full);else {let el=document.createElement('textarea');el.value=full;document.body.append(el);el.select();document.execCommand('copy');el.remove();}alertToast('Für Gurkerl / Maia kopiert');}catch(e){openModal('Liste zum Kopieren',`<textarea class="editarea" readonly id="copyArea">${esc(full)}</textarea><p class="info">Text markieren und kopieren.</p>`);$('#copyArea').select();}}
+function downloadFile(filename,text,type){if(window.AndroidEinkauf?.saveFile){window.AndroidEinkauf.saveFile(filename,text,type);return;}const b=new Blob([text],{type});let url=URL.createObjectURL(b),a=document.createElement('a');a.href=url;a.download=filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);}
+function exportModal(){let l=active();openModal('Export & Gurkerl',`<p class="notice">Für Gurkerl kopieren wir die offenen Artikel als Text mit einer Bitte um günstige passende Produkte. Anschließend in den Maia-Chat einfügen. Der Warenkorb wird nicht automatisch übertragen.</p><div class="modal-actions"><button class="primary wide" id="copyMaia">Für Gurkerl kopieren</button><button class="secondary" id="openGurkerl">Gurkerl öffnen ↗</button><button class="secondary" id="copyPlain">Nur Liste kopieren</button><button class="secondary" id="exportTxt">Textdatei exportieren</button><button class="secondary" id="exportCsv">CSV exportieren</button></div>`);$('#copyMaia').onclick=copyCurrent;$('#openGurkerl').onclick=()=>{if(window.AndroidEinkauf?.openURL)window.AndroidEinkauf.openURL('https://www.gurkerl.at/');else window.open('https://www.gurkerl.at/','_blank','noopener');};$('#copyPlain').onclick=async()=>{let t=textFor(l);if(!t){alertToast('Keine offenen Artikel');return;}try{await clipboardText(t);alertToast('Liste kopiert');}catch(e){alertToast('Kopieren nicht verfügbar');}};$('#exportTxt').onclick=()=>downloadFile('Einkauf-'+slug(l.name)+'.txt',textFor(l),'text/plain;charset=utf-8');$('#exportCsv').onclick=()=>{let rows=[['Artikel','Menge','Erledigt','Geschäft'],...listItems(l.id).map(x=>[x.text,x.amount,x.done?'ja':'nein',l.store])];downloadFile('Einkauf-'+slug(l.name)+'.csv','\ufeff'+rows.map(r=>r.map(s=>'"'+String(s).replace(/"/g,'""')+'"').join(';')).join('\r\n'),'text/csv;charset=utf-8');};}
+async function clipboardText(t){if(window.AndroidEinkauf?.copyText){window.AndroidEinkauf.copyText(t);return;}if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(t);return;}const el=document.createElement('textarea');el.value=t;el.style.position='fixed';el.style.opacity='0';document.body.appendChild(el);el.select();const ok=document.execCommand('copy');el.remove();if(!ok)throw Error('Zwischenablage nicht verfügbar');}
+function recipeImportModal(){openModal('Zutaten übernehmen',`<div class="notice">Kopiere die Zutaten aus einem Rezept hierher – eine Zutat pro Zeile. Die App erkennt viele Mengen und vermeidet identische Doppeleinträge.</div><label class="field">Zutaten aus Rezept oder Textliste<textarea id="recipeLines" name="recipeLines" rows="8" placeholder="2 Zucchini\n500 g Pasta\n1 Zitrone\nOlivenöl"></textarea></label><div class="import-preview"><strong>Übernahme:</strong> Die Artikel landen in „${esc(active().name)}“. Mengen werden separat gespeichert. Du kannst jeden Artikel danach ändern oder einem anderen Geschäft zuordnen.</div><button class="primary wide" id="recipeCommit">Zutaten übernehmen</button>`);$('#recipeCommit').onclick=()=>{const n=addMultiple($('#recipeLines').value);if(n){closeModal();alertToast(`${n} Zutaten hinzugefügt`);}else alertToast('Keine neuen Artikel erkannt');};}
+function slug(s){return s.toLowerCase().replace(/[^a-z0-9äöüß-]/gi,'-').replace(/-+/g,'-').slice(0,50);}
+function scanModal(){openModal('Zettel scannen',`<p class="info">Handgeschriebenen Einkaufszettel fotografieren. Die erkannte Schrift kannst du vor dem Hinzufügen korrigieren.</p><button class="primary wide" id="chooseImage">Foto aufnehmen / auswählen</button><p id="ocrStatus" class="scan-status" style="margin:14px 0">Die Android-Texterkennung läuft ohne Internet. Bitte prüfe handgeschriebene Wörter, bevor du sie übernimmst.</p><label class="field">Erkannte Artikel – ein Artikel pro Zeile<textarea name="scantext" id="scanText" placeholder="Milch\nBrot\nÄpfel" rows="7"></textarea></label><div class="modal-actions"><button class="primary wide" id="addScanned">Artikel zur aktiven Liste hinzufügen</button></div>`);$('#chooseImage').onclick=()=>$('#scanFile').click();$('#addScanned').onclick=()=>{const n=addMultiple($('#scanText').value);if(n){closeModal();alertToast(`${n} Artikel hinzugefügt`);}else alertToast('Bitte zuerst Artikel eingeben');};}
+function setOCRStatus(s){const el=$('#ocrStatus');if(el)el.textContent=s;}
+async function encodeScanImage(file){try{const bitmap=await createImageBitmap(file);const scale=Math.min(1,2200/Math.max(bitmap.width,bitmap.height));const canvas=document.createElement('canvas');canvas.width=Math.round(bitmap.width*scale);canvas.height=Math.round(bitmap.height*scale);const ctx=canvas.getContext('2d');ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();return canvas.toDataURL('image/jpeg',.87);}catch(e){return await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file);});}}
+async function handleImage(file){if(!file)return;scanModal();setOCRStatus('Bild wird verarbeitet …');let dataURL=await encodeScanImage(file);if(window.AndroidEinkauf?.recognizeImage){window.AndroidEinkauf.recognizeImage(dataURL);return;}
+ try{setOCRStatus('Texterkennung wird geladen (beim ersten Mal online) …');await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/tesseract.min.js');setOCRStatus('Schrift wird gelesen …');const worker=await Tesseract.createWorker('deu');const result=await worker.recognize(dataURL);await worker.terminate();$('#scanText').value=cleanLines(result.data.text).join('\n');setOCRStatus('Erkannt! Bitte Wörter kontrollieren – Handschrift kann Fehler enthalten.');}catch(e){setOCRStatus('Automatische Erkennung im Browser derzeit nicht verfügbar. Du kannst die Artikel unten manuell eintragen. Android-Version: ML Kit offline.');}}
+window.onAndroidOCR=(text,error)=>{if(!$('#scanText'))return;if(error){setOCRStatus('Erkennung fehlgeschlagen: '+error);return;}$('#scanText').value=cleanLines(text||'').join('\n');setOCRStatus('Foto erkannt. Bitte die Wörter vor dem Übernehmen kontrollieren.');};
+function loadScript(src){return new Promise((resolve,reject)=>{if(window.Tesseract&&src.includes('tesseract'))return resolve();let s=document.createElement('script');s.src=src;s.onload=resolve;s.onerror=()=>reject(new Error('Laden fehlgeschlagen'));document.head.append(s);});}
+function backup(){let b={format:'einkauf-v1',date:new Date().toISOString(),data:{version:1,activeId:state.activeId,lists:state.lists.map(l=>({...l,sharedId:null})),items:state.items}};downloadFile('Einkauf-Backup-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(b,null,2),'application/json;charset=utf-8');}
+function settingsModal(){openModal('Einstellungen & Backup',`<p class="modal-label">Deine Daten</p><p class="info">Alle Listen werden auf diesem Gerät gespeichert. Eine gemeinsame Liste wird zusätzlich mit Firebase synchronisiert, sobald Firebase eingerichtet wurde.</p><div class="modal-actions"><button class="primary" id="backupSave">JSON-Backup speichern</button><button class="secondary" id="backupLoad">Backup wiederherstellen</button></div><hr class="divider"><p class="modal-label">Partner-Synchronisierung</p><p class="info" id="syncInfo">${esc(firebaseReady?'Firebase verbunden.':'Firebase noch nicht eingerichtet. Lokale Listen funktionieren trotzdem.')} ${esc(cloudError)}</p><button id="openPair" class="secondary">Gemeinsam verbinden</button><hr class="divider"><p class="modal-label">Hinweis</p><p class="info">Bei einer Neuinstallation kann eine anonyme Geräteanmeldung verloren gehen. Sichere vorher deine Listen per JSON und teile gemeinsame Listen erneut.</p>`);$('#backupSave').onclick=backup;$('#backupLoad').onclick=()=>$('#backupFile').click();$('#openPair').onclick=pairModal;}
+async function restore(file){if(!file)return;try{let j=JSON.parse(await file.text());if(j.format!=='einkauf-v1'||!Array.isArray(j.data?.lists)||!Array.isArray(j.data?.items)||j.data.lists.length>100||j.data.items.length>10000)throw Error('Unbekanntes Dateiformat');const ids=new Set(j.data.lists.map(x=>x.id));let lists=j.data.lists.filter(x=>typeof x.id==='string'&&typeof x.name==='string').map(x=>({id:x.id.slice(0,80),name:x.name.slice(0,70),store:String(x.store||'Alle Geschäfte').slice(0,60),sharedId:null}));let items=j.data.items.filter(x=>ids.has(x.listId)&&typeof x.text==='string').map(x=>({id:String(x.id).slice(0,80),listId:String(x.listId).slice(0,80),text:x.text.slice(0,140),amount:String(x.amount||'').slice(0,100),done:!!x.done,updatedAt:Number(x.updatedAt)||Date.now()}));if(!lists.length)throw Error('Keine Listen');if(!confirm('Aktuelle lokale Listen durch dieses Backup ersetzen?'))return;listeners.forEach(off=>off());listeners.clear();state={...initial(),lists,items,activeId:lists[0].id};persist();closeModal();alertToast('Backup wiederhergestellt');}catch(e){alertToast('Backup ungültig: '+e.message);}}
+// Firebase cloud. Auth is per-device, users are authenticated anonymously.
+async function initFirebase(){let cfg=window.WOHIN_FIREBASE_CONFIG;if(!cfg?.apiKey||!cfg?.projectId)return;firebaseBusy=true;
+ try{await loadScript('https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js');await loadScript('https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js');await loadScript('https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js');
+ firebase.initializeApp(cfg);cloud=firebase.firestore();try{await cloud.enablePersistence({synchronizeTabs:true});}catch(err){console.warn('Firestore cache',err.code);}cloudUser=firebase.auth().currentUser||(await firebase.auth().signInAnonymously()).user;firebaseReady=true;cloudError='';for(const l of state.lists)if(l.sharedId)watchList(l);render();alertToast('Cloud-Synchronisierung bereit');}
+ catch(e){cloudError=e.message||String(e);console.warn('Firebase konnte nicht gestartet werden:',e);render();}finally{firebaseBusy=false;}}
+function needCloud(){if(!firebaseReady||!cloudUser||!cloud){openModal('Cloud einrichten',`<p class="notice">Die App funktioniert bereits offline. Für gemeinsame Live-Listen brauchst du ein Firebase-Projekt mit aktivierter anonymer Anmeldung, Firestore und den mitgelieferten Sicherheitsregeln.</p><p class="info">Die genaue Einrichtung steht in <strong>README.md</strong> im App-Paket. Nach dem Eintragen deiner Web-Konfiguration in <strong>firebase-config.js</strong> und dem Veröffentlichen der Firestore-Regeln kann der QR-Verbindungsablauf verwendet werden.</p><p class="info">${esc(firebaseBusy?'Verbinde gerade …':cloudError?'Letzter Fehler: '+cloudError:'Noch keine Firebase-Konfiguration erkannt.')}</p>`);return false;}return true;}
+const sharedRef=id=>cloud.collection('sharedLists').doc(id);
+function syncItem(l,item,op){if(!l?.sharedId)return;const payload={text:item.text,amount:item.amount,done:item.done,updatedAt:item.updatedAt};const id=l.sharedId;
+ // Firestore persists pending writes offline. The local copy is the immediate UI state.
+ if(cloudUser){let ref=sharedRef(id).collection('items').doc(item.id);const p=op==='delete'?ref.delete():ref.set(payload);p.catch(e=>{console.error(e);alertToast('Cloud: Änderung konnte nicht übertragen werden');});}
+ else{state.pending.push({id,op,itemId:item.id,payload});save();}
+}
+function syncMeta(l){if(!l.sharedId)return;if(l.ownerUid&&l.ownerUid!==cloudUser?.uid){alertToast('Nur die Person, die diese Liste erstellt hat, kann sie umbenennen');return;}if(cloudUser){sharedRef(l.sharedId).update({name:l.name,store:l.store}).catch(e=>alertToast('Änderung nicht synchronisiert'));}}
+async function flushPending(){if(!cloudUser||!state.pending.length)return;let tasks=state.pending.slice();state.pending=[];save();for(const task of tasks){try{let r=sharedRef(task.id).collection('items').doc(task.itemId);await(task.op==='delete'?r.delete():r.set(task.payload));}catch(e){state.pending.push(task);save();}}}
+function stopListen(id){if(id&&listeners.has(id)){listeners.get(id)();listeners.delete(id);}}
+function watchList(l){if(!cloud||!l.sharedId||listeners.has(l.sharedId))return;let sid=l.sharedId;
+ const off1=sharedRef(sid).onSnapshot(s=>{if(!s.exists){return;}const cur=state.lists.find(z=>z.sharedId===sid);if(!cur)return;if(s.data().name&&cur.name!==s.data().name){cur.name=s.data().name;cur.store=s.data().store||'Alle Geschäfte';persist();}},err=>console.warn('Liste abonnieren',err.message));
+ const off2=sharedRef(sid).collection('items').onSnapshot(s=>{const cur=state.lists.find(z=>z.sharedId===sid);if(!cur)return;for(const change of s.docChanges()){let idx=state.items.findIndex(i=>i.listId===cur.id&&i.id===change.doc.id);if(change.type==='removed'){if(idx!==-1)state.items.splice(idx,1);continue;}const d=change.doc.data(),item={id:change.doc.id,listId:cur.id,text:String(d.text||'').slice(0,140),amount:String(d.amount||''),done:!!d.done,updatedAt:d.updatedAt||Date.now()};if(idx===-1)state.items.push(item);else state.items[idx]=item;}persist();},err=>{console.error(err);alertToast('Cloud-Zugriff fehlgeschlagen');});
+ listeners.set(sid,()=>{off1();off2();});flushPending();}
+async function startShare(){if(!needCloud())return;const l=active();if(l.sharedId&&l.ownerUid&&l.ownerUid!==cloudUser.uid){alertToast('Nur die erstellende Person kann neue Einladungen versenden');return;}if(l.sharedId)return createInvite(l);
+ try{let sid=uid();let ref=sharedRef(sid),batch=cloud.batch();await ref.set({name:l.name,store:l.store,ownerUid:cloudUser.uid,createdAt:firebase.firestore.FieldValue.serverTimestamp()});for(const item of listItems(l.id))batch.set(ref.collection('items').doc(item.id),{text:item.text,amount:item.amount,done:item.done,updatedAt:item.updatedAt});await batch.commit();l.sharedId=sid;l.ownerUid=cloudUser.uid;persist();watchList(l);await createInvite(l);}catch(e){console.error(e);alertToast('Teilen nicht möglich: '+e.message);}}
+async function createInvite(l){if(!needCloud())return;try{let code=uid().replace(/-/g,'')+uid().replace(/-/g,'');let expires=firebase.firestore.Timestamp.fromDate(new Date(Date.now()+15*60*1000));await cloud.collection('invites').doc(code).set({listId:l.sharedId,ownerUid:cloudUser.uid,createdAt:firebase.firestore.FieldValue.serverTimestamp(),expiresAt:expires,usedBy:null});
+ const qrValue='EINKAUF:'+code;openModal('Partner verbinden',`<div class="notice">Diese Einladung ist <strong>15 Minuten</strong> gültig und nur einmal nutzbar. Lass den QR-Code in der zweiten App scannen.</div><div class="qr-box" id="qrOutput"></div><p class="modal-label" style="text-align:center">Alternativ Code weitergeben</p><div class="codebox" id="pairCode">${esc(code)}</div><div class="modal-actions"><button class="primary wide" id="copyCode">Einladungscode kopieren</button><button class="secondary wide" id="shareCode">Per Messenger teilen</button></div>`);
+ const q=new WohinQR(-1,0);q.addData(qrValue);q.make();const n=q.getModuleCount(),pad=4;let rects='';for(let y=0;y<n;y++)for(let x=0;x<n;x++)if(q.isDark(y,x))rects+=`<rect x="${x+pad}" y="${y+pad}" width="1" height="1"/>`;$('#qrOutput').innerHTML=`<svg aria-label="QR-Einladung" role="img" viewBox="0 0 ${n+2*pad} ${n+2*pad}" width="235" height="235" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><g fill="#172b21">${rects}</g></svg>`;$('#copyCode').onclick=async()=>{if(window.AndroidEinkauf?.copyText)window.AndroidEinkauf.copyText(code);else await navigator.clipboard.writeText(code);alertToast('Code kopiert');};$('#shareCode').onclick=async()=>{try{if(navigator.share)await navigator.share({text:'Einkauf-Einladungscode: '+code});else {if(window.AndroidEinkauf?.copyText)window.AndroidEinkauf.copyText(code);else await navigator.clipboard.writeText(code);alertToast('Code kopiert');}}catch(e){}};}
+ catch(e){console.error(e);alertToast('Einladung fehlgeschlagen: '+e.message);}}
+async function joinCode(raw){if(!needCloud())return;let code=String(raw||'').trim().replace(/^EINKAUF:/i,'').replace(/\s+/g,'');if(!/^[0-9a-f]{64}$/i.test(code)){alertToast('Ungültiger Einladungscode');return;}
+ try{const ref=cloud.collection('invites').doc(code);const invite=await ref.get();if(!invite.exists)throw Error('Einladung existiert nicht');const d=invite.data();if(d.usedBy)throw Error('Code wurde bereits verwendet');if(d.expiresAt.toMillis()<Date.now())throw Error('Einladung abgelaufen');
+ await cloud.runTransaction(async tx=>{const snap=await tx.get(ref);if(!snap.exists||snap.data().usedBy||snap.data().expiresAt.toMillis()<Date.now())throw Error('Einladung abgelaufen oder verbraucht');tx.update(ref,{usedBy:cloudUser.uid});tx.set(sharedRef(d.listId).collection('members').doc(cloudUser.uid),{userId:cloudUser.uid,inviteId:code,joinedAt:firebase.firestore.FieldValue.serverTimestamp()});});
+ const shared=await sharedRef(d.listId).get();if(!shared.exists)throw Error('Liste nicht gefunden');let l=state.lists.find(x=>x.sharedId===d.listId);if(!l){l={id:uid(),name:shared.data().name||'Gemeinsame Liste',store:shared.data().store||'Alle Geschäfte',sharedId:d.listId,ownerUid:shared.data().ownerUid};state.lists.push(l);}state.activeId=l.id;persist();watchList(l);closeModal();alertToast('Gemeinsame Liste verbunden!');
+ }catch(e){console.error(e);alertToast('Verbinden fehlgeschlagen: '+e.message);}}
+function pairModal(){if(!needCloud())return;const l=active();openModal('Gemeinsam einkaufen',`<p class="info">Teilt eure Listen über einen QR-Code. Jedes Geschäft kann separat geteilt werden. Änderungen erscheinen auf beiden Geräten.</p><div class="modal-actions"><button id="createPair" class="primary wide">${l.sharedId?'Neuen Einladungscode anzeigen':'Diese Liste teilen'}</button><button id="cameraPair" class="secondary wide">QR-Code scannen</button></div><label class="field">Oder Einladungscode eingeben<input id="joinCode" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="EINLADUNGSCODE"></label><button id="joinBtn" class="secondary wide" style="margin-top:9px">Mit Liste verbinden</button><p class="info">Du kannst mehrere Listen teilen. QR-Einladungen werden nach 15 Minuten ungültig.</p>`);$('#createPair').onclick=()=>startShare();$('#joinBtn').onclick=()=>joinCode($('#joinCode').value);$('#cameraPair').onclick=()=>startQRScan();}
+function stopScan(){qrLoop++;if(scanStream){scanStream.getTracks().forEach(t=>t.stop());scanStream=null;}}
+async function startQRScan(){if(!needCloud())return;if(window.AndroidEinkauf?.scanQRCode){window.AndroidEinkauf.scanQRCode();return;}
+ if(!('BarcodeDetector' in window)){alertToast('QR-Kamera hier nicht verfügbar – Code eingeben');return;}
+ try{const detector=new BarcodeDetector({formats:['qr_code']});scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});openModal('QR-Code scannen',`<p class="info">Halte die Kamera auf den QR-Code des anderen Handys.</p><video id="qrVideo" class="camera-preview" autoplay playsinline muted></video><button class="secondary wide" id="stopQR">Abbrechen</button>`);$('#qrVideo').srcObject=scanStream;$('#stopQR').onclick=()=>{closeModal();pairModal();};let token=++qrLoop;const loop=async()=>{if(token!==qrLoop)return;try{const found=await detector.detect($('#qrVideo'));if(found.length){const c=found[0].rawValue;stopScan();await joinCode(c);return;}}catch(e){}if(token===qrLoop)setTimeout(loop,320);};loop();}
+ catch(e){stopScan();alertToast('Kamera nicht verfügbar: '+e.message);}}
+window.onAndroidQRCode=code=>joinCode(code);
+// UI listeners
+$('#closeModal').onclick=closeModal;$('#overlay').addEventListener('click',e=>{if(e.target===$('#overlay'))closeModal();});document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#overlay').hidden)closeModal();});
+$('#quickAddForm').onsubmit=e=>{e.preventDefault();const t=$('#newItemText').value;if(t.trim()){addItem(t);$('#newItemText').value='';$('#newItemText').focus();}};
+$('#items').addEventListener('click',itemClick);$('#doneItems').addEventListener('click',itemClick);function itemClick(e){const b=e.target.closest('[data-act]');if(!b)return;if(b.dataset.act==='toggle')toggleItem(b.dataset.id);if(b.dataset.act==='edit')itemModal(b.dataset.id);}
+$('#listTabs').onclick=e=>{let b=e.target.closest('[data-act="switch"]');if(b)useList(b.dataset.id);};
+$('#doneToggle').onclick=()=>{showDone=!showDone;render();};$('#newListBtn').onclick=newListModal;$('#listMenuBtn').onclick=listModal;$('#copyBtn').onclick=copyCurrent;$('#exportBtn').onclick=exportModal;$('#scanBtn').onclick=scanModal;$('#recipeImportBtn').onclick=recipeImportModal;$('#pairBtn').onclick=pairModal;$('#settingsBtn').onclick=settingsModal;
+$('#scanFile').onchange=e=>{handleImage(e.target.files?.[0]);e.target.value='';};$('#backupFile').onchange=e=>{restore(e.target.files?.[0]);e.target.value='';};
+if(window.AndroidEinkauf && 'serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.unregister())).catch(()=>{});}else if('serviceWorker' in navigator && location.protocol.startsWith('http')){navigator.serviceWorker.register('./sw.js').catch(console.warn);}
+window.addEventListener('online',()=>{if(firebaseReady)flushPending();else if(!firebaseBusy&&window.WOHIN_FIREBASE_CONFIG)initFirebase();});
+window.einkaufAndroidBack=()=>{if(!$('#overlay').hidden){closeModal();return true;}return false;};
+render();initFirebase();
+})();
