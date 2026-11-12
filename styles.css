@@ -240,18 +240,25 @@ body {
 .list-card[open] > summary .card-chevron { border-color: #fff; }
 .card-top .gurkerl-copy, .card-add button { background: #d5e5e3; color: var(--forest); }
 
-/* The list title and its arrow also close the full-page view. */
-#app:has(.list-card[open]) {
-  margin-block: 0;
-  min-height: 100svh;
-  border-radius: 0;
-  box-shadow: none;
-  background: var(--paper);
+/* Keep the page controls and the open list title in view while scrolling. */
+#app {
+  --header-top: max(14px, env(safe-area-inset-top));
+  --header-height: calc(var(--header-top) + 64px);
+  overflow: clip;
 }
-#app:has(.list-card[open]) .app-header,
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  padding-top: var(--header-top);
+  background: var(--bg);
+}
 #listCards:has(.list-card[open]) > .list-card:not([open]) { display: none; }
-#app:has(.list-card[open]) .bento-main { padding-inline: 0; }
-.list-card[open] { border-radius: 0; }
-.list-card[open] > summary { padding-top: max(16px, env(safe-area-inset-top)); }
+.list-card[open] { overflow: clip; }
+.list-card[open] > summary {
+  position: sticky;
+  top: var(--header-height);
+  z-index: 2;
+  background: var(--tile, var(--forest));
+}
 .list-card[open] > summary:focus-visible { outline-offset: -4px; }
-#app:has(.list-card[open]) footer { padding-inline: 16px; }
