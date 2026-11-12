@@ -1,6 +1,6 @@
 // Einkauf PWA: lokale Grunddateien vorhalten. Externe Firebase-/OCR-Skripte
 // werden bewusst NICHT zwischengespeichert.
-const CACHE = 'einkauf-bento-v3';
+const CACHE = 'einkauf-bento-v5';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './qr.js',
   './firebase-config.js', './manifest.webmanifest',
@@ -18,7 +18,7 @@ self.addEventListener('fetch', event => {
   if (req.method !== 'GET' || url.origin !== self.location.origin) return;
   if (!url.pathname.startsWith(new URL(self.registration.scope).pathname)) return;
   // Network-first keeps updates easy on GitHub Pages; cached assets work offline.
-  event.respondWith(fetch(req).then(response => {
+  event.respondWith(fetch(req,{cache:'no-cache'}).then(response => {
     if (response.ok) {
       const copy = response.clone();
       event.waitUntil(caches.open(CACHE).then(c => c.put(req, copy)));
