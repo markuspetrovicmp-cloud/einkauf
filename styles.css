@@ -115,17 +115,93 @@ body { background: var(--bg); }
 .card-body .item-main { font-weight: 500; }
 .done-accordion { border-top: 1px solid var(--line); }
 
+
+.app-header {
+  min-height: 0;
+  padding: max(14px, env(safe-area-inset-top)) 16px 14px;
+  gap: 10px;
+  background: transparent;
+}
+.app-logo { display: block; flex: 0 0 auto; }
+.app-header .new-list-button {
+  margin-left: auto;
+  padding: 0 12px;
+  min-height: 44px;
+  border-radius: 12px;
+  background: var(--lime);
+  font-size: .85rem;
+}
+.settings-white { flex: 0 0 44px; border-radius: 12px; }
+
+#listCards {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+.list-card { min-width: 0; border-radius: 17px; }
+.list-card:not([open]) > summary {
+  aspect-ratio: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-items: end;
+  padding: 15px;
+  gap: 8px;
+}
+.list-card:not([open]) .list-name {
+  grid-column: 1 / -1;
+  align-self: start;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  font-size: clamp(1.15rem, 5.4vw, 1.6rem);
+}
+.list-card:not([open]) .open-count { font-size: .82rem; }
+.list-card:not([open]) .card-chevron { margin: 0 3px 5px 0; }
+.list-card[open] { grid-column: 1 / -1; }
+.bento-main footer #saveStatus { color: var(--muted); }
+
+.list-name {
+  font-family: inherit;
+  font-weight: 700;
+  letter-spacing: -.025em;
+  line-height: 1.15;
+}
+
 @font-face {
-  font-family: "Einkauf Marker";
-  src: url("./einkauf-marker.ttf") format("truetype");
-  font-weight: 400;
+  font-family: "Permanent Marker";
+  src: url("./permanent-marker.ttf") format("truetype");
   font-style: normal;
+  font-weight: 400;
   font-display: swap;
 }
+:root { --bg: #f4e7bc; }
 .list-name, .item-department h3 {
-  font-family: "Einkauf Marker", Inter, system-ui, sans-serif;
+  font-family: "Permanent Marker", system-ui, sans-serif;
   font-weight: 400;
   letter-spacing: normal;
 }
-.list-name { font-size: 1.5rem; line-height: 1.1; }
-.item-department h3 { font-size: 1.15rem; line-height: 1.25; }
+.list-card:not([open]) .list-name {
+  font-size: clamp(.95rem, 3.75vw, 1.22rem);
+}
+[data-color="terracotta"] { --tile: #a94835; --tile-ink: #fff8e4; }
+[data-color="sage"] { --tile: #b9c9a3; --tile-ink: #183628; }
+[data-color="honey"] { --tile: #efc669; --tile-ink: #3d2b15; }
+[data-color="clay"] { --tile: #e7b5a8; --tile-ink: #482c25; }
+[data-color="petrol"] { --tile: #17483f; --tile-ink: #fff8e4; }
+[data-color="cream"] { --tile: #fff7e4; --tile-ink: #12382c; }
+.list-card:not([open]) { background: var(--tile); color: var(--tile-ink); }
+.list-card:not([open]) .open-count { color: inherit; }
+.list-card:not([open]) .card-chevron { border-color: currentColor; }
+.list-colors {
+  border: 0;
+  padding: 0;
+  margin: 14px 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 10px;
+}
+.list-colors legend { padding: 0 0 6px; font-size: .9rem; font-weight: 700; }
+.color-choice { display: flex; gap: 6px; align-items: center; min-height: 36px; font-size: .85rem; cursor: pointer; }
+.color-choice input { width: 16px; height: 16px; margin: 0; accent-color: var(--forest); }
+.color-choice span { width: 17px; height: 17px; border-radius: 4px; background: var(--tile); border: 1px solid #0003; }
