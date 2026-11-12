@@ -40,11 +40,11 @@ function alertToast(msg,ms=2800){const t=$('#toast');t.textContent=msg;t.classLi
 function active(){return state.lists.find(x=>x.id===state.activeId)||state.lists[0];}
 function listItems(id){return state.items.filter(x=>x.listId===id);}
 function openModal(title,content){$('#modalTitle').textContent=title;$('#modalBody').innerHTML=content;$('#overlay').hidden=false;}
-function closeModal(){stopScan();$('#overlay').hidden=true;$('#modalBody').innerHTML='';}
+function closeModal(){stopDictation();stopScan();$('#overlay').hidden=true;$('#modalBody').innerHTML='';}
 function formVal(name){return document.querySelector(`[name="${name}"]`)?.value?.trim()||'';}
 const openedLists=new Set(), shownDone=new Set();
 function render(){let a=active();if(!a){state=initial();a=active();save();}
- const host=$('#listCards');const typed={};host.querySelectorAll('.card-add input').forEach(i=>{if(i.value)typed[i.closest('.list-card').dataset.list]=i.value;});const focusList=document.activeElement?.closest?.('.card-add')?.closest('.list-card')?.dataset.list;host.innerHTML=state.lists.map((l,index)=>{const all=listItems(l.id),todo=all.filter(x=>!x.done),done=all.filter(x=>x.done);return `<details name="einkauf-lists" class="list-card" data-color="${listColor(l,index)}" data-list="${esc(l.id)}" ${openedLists.has(l.id)?'open':''}><summary><span class="list-name">${esc(l.name)}</span><span class="open-count">${todo.length} offen</span><span class="card-chevron" aria-hidden="true"></span></summary><div class="card-top"><div class="card-meta"><span>${esc(l.sharedId?(cloudUser?(navigator.onLine?'Gemeinsam · verbunden':'Gemeinsam · offline'):'Gemeinsam · Anmeldung nötig'):'Privat · auf diesem Gerät')}</span><button data-card-action="menu" aria-label="Liste verwalten">⋯</button></div><div class="card-actions"><button data-card-action="scan">Zettel importieren</button><button class="gurkerl-copy" data-card-action="copy-gurkerl" ${todo.length ? '' : 'disabled'}>Für Gurkerl kopieren</button></div></div><div class="card-body"><form class="card-add"><input name="article" aria-label="Artikel für ${esc(l.name)}" placeholder="z. B. 500g Tofu" maxlength="140" autocomplete="off"><button aria-label="Artikel hinzufügen" type="submit">+</button></form><div class="items">${departmentHTML(todo)}</div>${!todo.length?`<p class="empty">${done.length?'Alles erledigt.':'Deine Liste ist noch leer.'}</p>`:''}${done.length?`<details class="done-accordion" ${shownDone.has(l.id)?'open':''}><summary>Erledigt · ${done.length}<span class="card-chevron" aria-hidden="true"></span></summary><div class="items done-items">${done.map(itemHTML).join('')}</div></details>`:''}<div class="card-secondary"><button data-card-action="recipe">Aus Rezept</button><button data-card-action="share">Teilen</button><button data-card-action="export">Weitere Exporte</button></div></div></details>`;}).join('');
+ const host=$('#listCards');const typed={};host.querySelectorAll('.card-add input').forEach(i=>{if(i.value)typed[i.closest('.list-card').dataset.list]=i.value;});const focusList=document.activeElement?.closest?.('.card-add')?.closest('.list-card')?.dataset.list;host.innerHTML=state.lists.map((l,index)=>{const all=listItems(l.id),todo=all.filter(x=>!x.done),done=all.filter(x=>x.done);return `<details name="einkauf-lists" class="list-card" data-color="${listColor(l,index)}" data-list="${esc(l.id)}" ${openedLists.has(l.id)?'open':''}><summary><span class="list-name">${esc(l.name)}</span><span class="open-count">${todo.length} offen</span><span class="card-chevron" aria-hidden="true"></span></summary><div class="card-top"><div class="card-meta"><span>${esc(l.sharedId?(cloudUser?(navigator.onLine?'Gemeinsam · verbunden':'Gemeinsam · offline'):'Gemeinsam · Anmeldung nötig'):'Privat · auf diesem Gerät')}</span><button data-card-action="menu" aria-label="Liste verwalten">⋯</button></div><div class="card-actions"><button data-card-action="scan">Zettel importieren</button><button class="gurkerl-copy" data-card-action="copy-gurkerl" ${todo.length ? '' : 'disabled'}>Für Gurkerl kopieren</button></div></div><div class="card-body"><form class="card-add"><input name="article" aria-label="Artikel für ${esc(l.name)}" placeholder="z. B. 500g Tofu" maxlength="140" autocomplete="off"><button class="dictation-mic" data-card-action="dictate" aria-label="Artikel diktieren" type="button"><span aria-hidden="true">🎙</span></button><button aria-label="Artikel hinzufügen" type="submit">+</button></form><div class="items">${departmentHTML(todo)}</div>${!todo.length?`<p class="empty">${done.length?'Alles erledigt.':'Deine Liste ist noch leer.'}</p>`:''}${done.length?`<details class="done-accordion" ${shownDone.has(l.id)?'open':''}><summary>Erledigt · ${done.length}<span class="card-chevron" aria-hidden="true"></span></summary><div class="items done-items">${done.map(itemHTML).join('')}</div></details>`:''}<div class="card-secondary"><button data-card-action="recipe">Aus Rezept</button><button data-card-action="share">Teilen</button><button data-card-action="export">Weitere Exporte</button></div></div></details>`;}).join('');
  host.querySelectorAll('.list-card').forEach(c=>{const v=typed[c.dataset.list];if(v!=null)c.querySelector('.card-add input').value=v;if(focusList&&c.dataset.list===focusList)c.querySelector('.card-add input').focus();});
  host.querySelectorAll('.list-card').forEach(el=>el.addEventListener('toggle',()=>{const id=el.dataset.list;if(el.open){if(!openedLists.has(id)){openedLists.clear();openedLists.add(id);state.activeId=id;save();window.scrollTo(0,0);}}else openedLists.delete(id);}));
  host.querySelectorAll('.done-accordion').forEach(el=>el.addEventListener('toggle',()=>{const id=el.closest('.list-card').dataset.list;el.open?shownDone.add(id):shownDone.delete(id);}));
@@ -184,6 +184,109 @@ async function shareEntries(){
  try{await clipboardText(message);alertToast('Einträge zum Teilen kopiert');}catch(e){alertToast('Teilen nicht verfügbar');}
 }
 function cleanLines(text){return String(text||'').replace(/\r/g,'').split('\n').map(s=>s.replace(/^\s*(?:[-•*☐☑✓]\s*|\d{1,3}[.)]\s+|\?\s+)/,'').replace(/[\s\-]+$/,'').trim()).filter(x=>x.length>0&&x.length<170).slice(0,150);}
+const spokenNumbers = new Map([
+  ['ein',1],['eine',1],['einen',1],['eins',1],['zwei',2],['drei',3],
+  ['vier',4],['fünf',5],['sechs',6],['sieben',7],['acht',8],['neun',9],
+  ['zehn',10],['elf',11],['zwölf',12],['zwanzig',20],['hundert',100]
+]);
+
+function dictationLines(text) {
+  return text
+    .replace(/\b(?:komma|neue zeile)\b/gi, '\n')
+    .split(/[,.;](?!\d)|\n|\s+und\s+/i)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => line.replace(/^([\p{L}]+)\s+/u, (match, word) =>
+      spokenNumbers.has(word.toLowerCase()) ? spokenNumbers.get(word.toLowerCase()) + ' ' : match
+    ))
+    .map(line => line.replace(/^(\d+(?:[,.]\d+)?)\s+(kilogramm|gramm|milliliter)\s+/i,
+      (_, amount, unit) => amount + ' ' + {kilogramm:'kg', gramm:'g', milliliter:'ml'}[unit.toLowerCase()] + ' '
+    ))
+    .join('\n');
+}
+
+let activeDictation = null;
+
+function stopDictation() {
+  const recognition = activeDictation;
+  activeDictation = null;
+  recognition?.abort();
+}
+
+function dictationModal(listId) {
+  openModal('Liste diktieren', `<p class="info">Sag z. B. „Zwei Liter Milch, sechs Eier und 500 Gramm Tofu“.</p>
+    <p id="dictationStatus" class="scan-status" role="status"></p>
+    <label class="field">Artikel prüfen<textarea id="dictationText" rows="6" placeholder="Ein Artikel pro Zeile"></textarea></label>
+    <div class="modal-actions">
+      <button id="dictationStart" class="secondary" type="button">Diktieren</button>
+      <button id="dictationStop" class="secondary" type="button" hidden>Fertig</button>
+      <button id="dictationAdd" class="primary" type="button">Artikel übernehmen</button>
+    </div>`);
+  const status = $('#dictationStatus');
+  const input = $('#dictationText');
+  const start = $('#dictationStart');
+  const stop = $('#dictationStop');
+  const add = $('#dictationAdd');
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const keyboardHint = 'Tippe ins Textfeld und nutze das Mikro deiner Tastatur. Für mehrere Artikel sag „Komma“ dazwischen.';
+  add.onclick = () => {
+    const count = addMultiple(dictationLines(input.value), listId);
+    if (count) {
+      closeModal();
+      alertToast(count + ' Artikel hinzugefügt');
+    } else {
+      status.textContent = 'Keine neuen Artikel zum Übernehmen.';
+    }
+  };
+
+  if (!Recognition) {
+    start.hidden = true;
+    status.textContent = keyboardHint;
+    return;
+  }
+
+  start.onclick = () => {
+    const recognition = new Recognition();
+    recognition.lang = 'de-AT';
+    let failure = false;
+    activeDictation = recognition;
+    start.disabled = add.disabled = input.readOnly = true;
+    stop.hidden = false;
+    stop.disabled = false;
+    status.textContent = 'Ich höre zu …';
+    stop.onclick = () => {
+      stop.disabled = true;
+      recognition.stop();
+    };
+    recognition.onresult = event => {
+      if (activeDictation !== recognition) return;
+      const lines = dictationLines(event.results[0][0].transcript);
+      if (lines) input.value = [input.value.trim(), lines].filter(Boolean).join('\n');
+    };
+    recognition.onerror = () => {
+      if (activeDictation !== recognition) return;
+      failure = true;
+      status.textContent = 'Spracherkennung nicht verfügbar. ' + keyboardHint;
+    };
+    recognition.onend = () => {
+      if (activeDictation !== recognition) return;
+      activeDictation = null;
+      start.disabled = add.disabled = input.readOnly = false;
+      stop.hidden = true;
+      if (!failure) status.textContent = input.value.trim()
+        ? 'Bitte prüfen und bei Bedarf korrigieren.'
+        : 'Ich habe nichts verstanden. Du kannst es noch einmal versuchen.';
+    };
+    try {
+      recognition.start();
+    } catch {
+      recognition.onerror();
+      recognition.onend();
+    }
+  };
+  start.click();
+}
+
 function splitQuantity(raw){const s=String(raw||'').trim();const note=s.match(/^(.+?)\s+—\s+(.+)$/);if(note)return {text:note[1].trim(),amount:note[2].trim()};const prefix=s.match(/^(\d+(?:[,.]\d+)?\s*(?:kg|g|l|liter|ml|stk\.?|st\.?|packungen?|stück|x|becher|flaschen?|dosen?|bund|päckchen|el|tl))\s+(.+)$/i);if(prefix)return {amount:prefix[1].trim(),text:prefix[2].trim()};const simple=s.match(/^(\d+(?:[,.]\d+)?)\s*[x×]\s+(.+)$/i);if(simple)return {amount:simple[1]+' ×',text:simple[2].trim()};const numeric=s.match(/^(\d+(?:[,.]\d+)?)\s+(.+)$/);if(numeric)return {amount:numeric[1],text:numeric[2].trim()};return {amount:'',text:s};}
 function addMultiple(raw,listId){const lines=cleanLines(raw),l=state.lists.find(x=>x.id===listId)||active();let added=0,skipped=0;const seen=new Set(listItems(l.id).filter(i=>!i.done).map(i=>`${i.text.toLocaleLowerCase('de').trim()}|${i.amount.toLocaleLowerCase('de').trim()}`));for(const line of lines){const parsed=splitQuantity(line);const key=`${parsed.text.toLocaleLowerCase('de').trim()}|${parsed.amount.toLocaleLowerCase('de').trim()}`;if(seen.has(key)){skipped++;continue;}seen.add(key);const item={id:uid(),listId:l.id,text:parsed.text.slice(0,140),amount:parsed.amount.slice(0,100),done:false,updatedAt:Date.now()};state.items.push(item);syncItem(l,item,'set');added++;}persist();if(skipped)alertToast(`${skipped} doppelte Artikel übersprungen`);return added;}
 function textFor(list,openOnly=true){const items=listItems(list.id).filter(x=>!openOnly||!x.done);return items.map(x=>`${x.amount?x.amount+' ':''}${x.text}`).join('\n');}
@@ -280,7 +383,7 @@ async function startQRScan(){if(!needCloud())return;if(window.AndroidEinkauf?.sc
 window.onAndroidQRCode=code=>joinCode(code);
 // UI listeners
 $('#closeModal').onclick=closeModal;$('#overlay').addEventListener('click',e=>{if(e.target===$('#overlay'))closeModal();});document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#overlay').hidden)closeModal();});
-$('#listCards').addEventListener('click',e=>{const card=e.target.closest('.list-card');if(!card)return;state.activeId=card.dataset.list;const item=e.target.closest('[data-act]');if(item){if(item.dataset.act==='toggle')toggleItem(item.dataset.id);if(item.dataset.act==='edit')itemModal(item.dataset.id);return;}const action=e.target.closest('[data-card-action]')?.dataset.cardAction;if(action==='menu')listModal();if(action==='scan')scanModal();if(action==='share')pairModal();if(action==='recipe')recipeImportModal();if(action==='copy-gurkerl')copyCurrent();if(action==='export')exportModal();});
+$('#listCards').addEventListener('click',e=>{const card=e.target.closest('.list-card');if(!card)return;state.activeId=card.dataset.list;const item=e.target.closest('[data-act]');if(item){if(item.dataset.act==='toggle')toggleItem(item.dataset.id);if(item.dataset.act==='edit')itemModal(item.dataset.id);return;}const action=e.target.closest('[data-card-action]')?.dataset.cardAction;if(action==='menu')listModal();if(action==='scan')scanModal();if(action==='dictate')dictationModal(card.dataset.list);if(action==='share')pairModal();if(action==='recipe')recipeImportModal();if(action==='copy-gurkerl')copyCurrent();if(action==='export')exportModal();});
 $('#listCards').addEventListener('submit',e=>{if(!e.target.matches('.card-add'))return;e.preventDefault();const id=e.target.closest('.list-card').dataset.list;state.activeId=id;const input=e.target.elements.article;const v=input.value;if(!v.trim())return;input.value='';addItem(v);const fresh=[...$('#listCards').querySelectorAll('.list-card')].find(c=>c.dataset.list===id);fresh.querySelector('input').focus();});
 $('#newListBtn').onclick=newListModal;$('#settingsBtn').onclick=settingsModal;
 $('#scanFile').onchange=e=>{handleImage(e.target.files?.[0]);e.target.value='';};$('#backupFile').onchange=e=>{restore(e.target.files?.[0]);e.target.value='';};

@@ -262,3 +262,10 @@ body {
   background: var(--tile, var(--forest));
 }
 .list-card[open] > summary:focus-visible { outline-offset: -4px; }
+
+.card-add .dictation-mic {
+  background: transparent;
+  color: var(--forest);
+  font-size: 20px;
+  flex: 0 0 44px;
+}
