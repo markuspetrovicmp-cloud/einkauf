@@ -32,3 +32,85 @@
   font-size: .82rem;
   font-weight: 650;
 }
+
+/* Neutral surfaces keep the list readable; green marks the main action. */
+:root {
+  --bg: #f5f5f2;
+  --paper: #fff;
+  --ink: #202521;
+  --muted: #555d57;
+  --line: #dce0dc;
+}
+body { background: var(--bg); }
+#listCards { gap: 12px; }
+.list-card { background: var(--paper); border: 1px solid #cdd3ce; border-radius: 18px; }
+.list-card > summary { min-height: 64px; padding-block: 15px; }
+.open-count { background: transparent; color: var(--muted); padding-inline: 0; }
+.card-meta { color: var(--muted); }
+.card-actions { display: grid; grid-template-columns: 1fr 1fr; }
+.card-actions button {
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid #cbd2cd;
+  padding: 8px;
+  font-weight: 600;
+}
+.card-actions .gurkerl-copy { background: var(--forest); border-color: var(--forest); color: #fff; }
+.card-add { background: var(--paper); border: 1px solid #bbc5be; margin: 0 0 16px; }
+.card-add input::placeholder { color: var(--muted); }
+.card-body .item { min-height: 52px; border-color: var(--line); padding-block: 7px; }
+.card-body .item-main em, .card-secondary button { color: var(--muted); }
+.card-body .check:not(.checked) { background: var(--paper); border-color: #68746c; }
+.item-department + .item-department { margin-top: 18px; }
+.item-department h3 {
+  background: transparent;
+  color: var(--ink);
+  padding: 0 0 7px;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+}
+
+/* Petrol and cream with a lime action and a soft marker behind department names. */
+:root {
+  --bg: #e5dcc3;
+  --paper: #fff7e4;
+  --ink: #12382c;
+  --forest: #0c382c;
+  --muted: #4f6056;
+  --line: #dcd4bd;
+  --lime: #b8f363;
+  --gold: #ffd568;
+}
+.app-header { background: var(--forest); min-height: 62px; padding-block: 6px; }
+.app-logo { width: 50px; height: 50px; border-radius: 12px; }
+.settings-white { background: var(--paper); color: var(--forest); width: 44px; height: 44px; border-radius: 50%; }
+.settings-white svg { width: 24px; height: 24px; }
+.new-list-row { padding: 6px 0; }
+.list-card { border: 0; border-radius: 22px; }
+.list-card[open] { background: var(--forest); }
+.list-card[open] > summary { color: var(--paper); padding-bottom: 8px; }
+.list-card[open] > summary .card-chevron { border-color: var(--paper); }
+.list-card[open] .open-count {
+  background: var(--gold);
+  color: var(--forest);
+  padding: 5px 9px;
+  font-weight: 700;
+}
+.card-top { padding: 0 16px 12px; }
+.card-top .card-meta { margin: 0 0 5px; color: var(--paper); }
+.card-top .card-meta button { color: var(--paper); }
+.card-top .card-actions { margin: 0; }
+.card-top .card-actions button { min-width: 0; min-height: 50px; border: 0; border-radius: 14px; }
+.card-top .gurkerl-copy { background: var(--lime); color: var(--forest); }
+.card-body { background: var(--paper); border-radius: 20px 20px 0 0; padding-top: 14px; }
+.card-add { border-color: #b7b39f; }
+.card-add button { background: var(--lime); border-radius: 10px; }
+.item-department h3 { border-bottom: 0; font-size: .9rem; padding-bottom: 4px; }
+.item-department h3 span {
+  padding-inline: 4px;
+  background: linear-gradient(177deg, transparent 40%, #ffe39a 41% 88%, transparent 89%);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.card-body .item-main { font-weight: 500; }
+.done-accordion { border-top: 1px solid var(--line); }
