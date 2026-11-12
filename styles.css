@@ -114,3 +114,18 @@ body { background: var(--bg); }
 }
 .card-body .item-main { font-weight: 500; }
 .done-accordion { border-top: 1px solid var(--line); }
+
+@font-face {
+  font-family: "Einkauf Marker";
+  src: url("./einkauf-marker.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+.list-name, .item-department h3 {
+  font-family: "Einkauf Marker", Inter, system-ui, sans-serif;
+  font-weight: 400;
+  letter-spacing: normal;
+}
+.list-name { font-size: 1.5rem; line-height: 1.1; }
+.item-department h3 { font-size: 1.15rem; line-height: 1.25; }
