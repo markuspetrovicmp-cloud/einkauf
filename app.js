@@ -70,9 +70,41 @@ function departmentFor(text) {
   return departments.find(([, matches]) => matches?.test(name))?.[0] || 'Sonstiges';
 }
 
+function itemDepartment(item) {
+  return departments.some(([label]) => label === item.department)
+    ? item.department : departmentFor(item.text);
+}
+
+function categoryModal(id) {
+  const item = state.items.find(entry => entry.id === id);
+  if (!item) return;
+  const options = departments.map(([label]) =>
+    `<button class="category-choice" type="button" data-department="${esc(label)}"
+      aria-pressed="${item.department === label}"><span>${esc(label)}</span></button>`
+  ).join('');
+  openModal('Kategorie ändern', `<p class="info">${esc(item.text)}</p>
+    <div id="categoryChoices" class="item-department category-choices">${options}</div>
+    <button id="automaticCategory" class="secondary wide" type="button"
+      aria-pressed="${!item.department}">Automatisch · ${esc(departmentFor(item.text))}</button>`);
+
+  const choose = department => {
+    const current = state.items.find(entry => entry.id === id);
+    if (current) {
+      current.department = department;
+      persist();
+    }
+    closeModal();
+  };
+  $('#categoryChoices').onclick = event => {
+    const button = event.target.closest('[data-department]');
+    if (button) choose(button.dataset.department);
+  };
+  $('#automaticCategory').onclick = () => choose(undefined);
+}
+
 function departmentHTML(items) {
   const grouped = new Map(departments.map(([label]) => [label, []]));
-  for (const item of items) grouped.get(departmentFor(item.text)).push(item);
+  for (const item of items) grouped.get(itemDepartment(item)).push(item);
   return [...grouped].filter(([, group]) => group.length).map(([label, group]) =>
     `<section class="item-department"><h3><span>${esc(label)}</span></h3>${group.map(itemHTML).join('')}</section>`
   ).join('');
@@ -102,7 +134,7 @@ function newListModal(){
  storeSelect.onchange=()=>{customLabel.classList.toggle('hidden',storeSelect.value!=='__custom__');if(!customLabel.classList.contains('hidden'))customLabel.querySelector('input').focus();};
  $('#listForm').onsubmit=e=>{e.preventDefault();const store=storeSelect.value==='__custom__'?formVal('customStore'):storeSelect.value;if(!store){alertToast('Bitte ein Geschäft eingeben');return;}createList(formVal('name'),store,e.currentTarget.elements.listColor.value);closeModal();alertToast('Liste erstellt');};
 }
-function itemModal(id){const x=state.items.find(z=>z.id===id);if(!x)return;const otherListOptions=state.lists.map(l=>`<option value="${esc(l.id)}" ${l.id===x.listId?'selected':''}>${esc(l.name)} (${esc(l.store)})</option>`).join('');openModal('Artikel bearbeiten',`<form id="itemForm"><label class="field">Artikel<input name="name" value="${esc(itemInput(x))}" maxlength="243" placeholder="z. B. 500g Tofu" required></label><label class="field">Einkaufsliste / Geschäft<select name="targetList">${otherListOptions}</select></label><div class="modal-actions"><button class="primary" type="submit">Speichern</button><button class="danger" id="deleteItemBtn" type="button">Löschen</button></div></form>`);$('#itemForm').onsubmit=e=>{e.preventDefault();const value=formVal('name');if(value!==itemInput(x)){const parsed=splitQuantity(value);editItem(id,parsed.text,parsed.amount);}const dest=formVal('targetList');if(dest && dest!==x.listId)moveItem(id,dest);closeModal();};$('#deleteItemBtn').onclick=()=>{if(confirm('Artikel löschen?')){deleteItem(id);closeModal();}};}
+function itemModal(id){const x=state.items.find(z=>z.id===id);if(!x)return;const otherListOptions=state.lists.map(l=>`<option value="${esc(l.id)}" ${l.id===x.listId?'selected':''}>${esc(l.name)} (${esc(l.store)})</option>`).join('');openModal('Artikel bearbeiten',`<form id="itemForm"><label class="field">Artikel<input name="name" value="${esc(itemInput(x))}" maxlength="243" placeholder="z. B. 500g Tofu" required></label><label class="field">Einkaufsliste / Geschäft<select name="targetList">${otherListOptions}</select></label><div class="modal-actions"><button class="primary" type="submit">Speichern</button><button class="secondary" id="itemCategoryBtn" type="button">Kategorie ändern</button><button class="danger" id="deleteItemBtn" type="button">Löschen</button></div></form>`);$('#itemForm').onsubmit=e=>{e.preventDefault();const value=formVal('name');if(value!==itemInput(x)){const parsed=splitQuantity(value);editItem(id,parsed.text,parsed.amount);}const dest=formVal('targetList');if(dest && dest!==x.listId)moveItem(id,dest);closeModal();};$('#itemCategoryBtn').onclick=()=>categoryModal(id);$('#deleteItemBtn').onclick=()=>{if(confirm('Artikel löschen?')){deleteItem(id);closeModal();}};}
 function listModal(){let l=active();openModal('Liste verwalten',`
 <div class="list-menu-grid">
   <button id="syncListBtn" class="menu-action" type="button"><span>♧</span> Liste mit Partnerin verbinden <small>QR-Code / Synchronisierung</small></button>
@@ -369,7 +401,7 @@ const loadedScripts=new Map();
 function loadScript(src){if(loadedScripts.has(src))return loadedScripts.get(src);const p=new Promise((resolve,reject)=>{const el=document.createElement('script');el.src=src;el.onload=resolve;el.onerror=()=>{loadedScripts.delete(src);reject(new Error('Laden fehlgeschlagen'));};document.head.append(el);});loadedScripts.set(src,p);return p;}
 function backup(){let b={format:'einkauf-v1',date:new Date().toISOString(),data:{version:1,activeId:state.activeId,lists:state.lists.map(l=>({...l,sharedId:null})),items:state.items}};downloadFile('Einkauf-Backup-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(b,null,2),'application/json;charset=utf-8');}
 function settingsModal(){openModal('Einstellungen & Backup',`<p class="modal-label">Deine Daten</p><p class="info">Alle Listen werden auf diesem Gerät gespeichert. Eine gemeinsame Liste wird zusätzlich mit Firebase synchronisiert, sobald Firebase eingerichtet wurde.</p><div class="modal-actions"><button class="primary" id="backupSave">JSON-Backup speichern</button><button class="secondary" id="backupLoad">Backup wiederherstellen</button></div><hr class="divider"><p class="modal-label">Partner-Synchronisierung</p><p class="info" id="syncInfo">${esc(firebaseReady?'Angemeldet: '+cloudUser.email:'Bitte mit Google anmelden. Lokale Listen funktionieren trotzdem.')} ${esc(cloudError)}</p><button id="googleLogin" class="primary">Mit Google anmelden</button><button id="googleLogout" class="secondary">Abmelden</button><button id="openPair" class="secondary">Gemeinsam verbinden</button><hr class="divider"><p class="modal-label">Hinweis</p><p class="info">Cloud-Zugriff erhalten nur freigeschaltete Google-Konten. Lokale Listen bitte weiterhin per JSON sichern.</p>`);$('#googleLogin').onclick=()=>{if(!window.firebase){alertToast('Verbindung wird geladen. Bitte kurz warten.');return;}googleLogin();};$('#googleLogout').onclick=async()=>{if(window.firebase)await firebase.auth().signOut();settingsModal();};$('#backupSave').onclick=backup;$('#backupLoad').onclick=()=>$('#backupFile').click();$('#openPair').onclick=pairModal;}
-async function restore(file){if(!file)return;try{let j=JSON.parse(await file.text());if(j.format!=='einkauf-v1'||!Array.isArray(j.data?.lists)||!Array.isArray(j.data?.items)||j.data.lists.length>100||j.data.items.length>10000)throw Error('Unbekanntes Dateiformat');const ids=new Set(j.data.lists.map(x=>x.id));let lists=j.data.lists.filter(x=>typeof x.id==='string'&&typeof x.name==='string').map(x=>({id:x.id.slice(0,80),name:x.name.slice(0,70),store:String(x.store||'Alle Geschäfte').slice(0,60),sharedId:null,color:LIST_COLORS.has(x.color)?x.color:undefined}));let items=j.data.items.filter(x=>ids.has(x.listId)&&typeof x.text==='string').map(x=>({id:String(x.id).slice(0,80),listId:String(x.listId).slice(0,80),text:x.text.slice(0,140),amount:String(x.amount||'').slice(0,100),done:!!x.done,updatedAt:Number(x.updatedAt)||Date.now()}));if(!lists.length)throw Error('Keine Listen');if(!confirm('Aktuelle lokale Listen durch dieses Backup ersetzen?'))return;listeners.forEach(off=>off());listeners.clear();state={...initial(),lists,items,activeId:lists[0].id};persist();closeModal();alertToast('Backup wiederhergestellt');}catch(e){alertToast('Backup ungültig: '+e.message);}}
+async function restore(file){if(!file)return;try{let j=JSON.parse(await file.text());if(j.format!=='einkauf-v1'||!Array.isArray(j.data?.lists)||!Array.isArray(j.data?.items)||j.data.lists.length>100||j.data.items.length>10000)throw Error('Unbekanntes Dateiformat');const ids=new Set(j.data.lists.map(x=>x.id));let lists=j.data.lists.filter(x=>typeof x.id==='string'&&typeof x.name==='string').map(x=>({id:x.id.slice(0,80),name:x.name.slice(0,70),store:String(x.store||'Alle Geschäfte').slice(0,60),sharedId:null,color:LIST_COLORS.has(x.color)?x.color:undefined}));let items=j.data.items.filter(x=>ids.has(x.listId)&&typeof x.text==='string').map(x=>({id:String(x.id).slice(0,80),listId:String(x.listId).slice(0,80),text:x.text.slice(0,140),amount:String(x.amount||'').slice(0,100),done:!!x.done,department:departments.some(([label])=>label===x.department)?x.department:undefined,updatedAt:Number(x.updatedAt)||Date.now()}));if(!lists.length)throw Error('Keine Listen');if(!confirm('Aktuelle lokale Listen durch dieses Backup ersetzen?'))return;listeners.forEach(off=>off());listeners.clear();state={...initial(),lists,items,activeId:lists[0].id};persist();closeModal();alertToast('Backup wiederhergestellt');}catch(e){alertToast('Backup ungültig: '+e.message);}}
 // Firebase cloud. Auth is per-device, users are authenticated anonymously.
 let authWatching=false;
 async function applyUser(user){for(const off of listeners.values())off();listeners.clear();cloudUser=null;firebaseReady=false;cloudError='';
@@ -393,7 +425,7 @@ async function flushPending(){if(!cloudUser||!state.pending.length)return;let ta
 function stopListen(id){if(id&&listeners.has(id)){listeners.get(id)();listeners.delete(id);}}
 function watchList(l){if(!cloud||!l.sharedId||listeners.has(l.sharedId))return;let sid=l.sharedId;
  const off1=sharedRef(sid).onSnapshot(s=>{if(!s.exists){return;}const cur=state.lists.find(z=>z.sharedId===sid);if(!cur)return;if(s.data().name&&cur.name!==s.data().name){cur.name=s.data().name;cur.store=s.data().store||'Alle Geschäfte';persist();}},err=>console.warn('Liste abonnieren',err.message));
- const off2=sharedRef(sid).collection('items').onSnapshot(s=>{const cur=state.lists.find(z=>z.sharedId===sid);if(!cur)return;for(const change of s.docChanges()){let idx=state.items.findIndex(i=>i.listId===cur.id&&i.id===change.doc.id);if(change.type==='removed'){if(idx!==-1)state.items.splice(idx,1);continue;}const d=change.doc.data(),item={id:change.doc.id,listId:cur.id,text:String(d.text||'').slice(0,140),amount:String(d.amount||''),done:!!d.done,updatedAt:d.updatedAt||Date.now()};if(idx===-1)state.items.push(item);else state.items[idx]=item;}persist();},err=>{console.error(err);alertToast('Cloud-Zugriff fehlgeschlagen');});
+ const off2=sharedRef(sid).collection('items').onSnapshot(s=>{const cur=state.lists.find(z=>z.sharedId===sid);if(!cur)return;for(const change of s.docChanges()){let idx=state.items.findIndex(i=>i.listId===cur.id&&i.id===change.doc.id);if(change.type==='removed'){if(idx!==-1)state.items.splice(idx,1);continue;}const d=change.doc.data(),item={id:change.doc.id,listId:cur.id,text:String(d.text||'').slice(0,140),amount:String(d.amount||''),done:!!d.done,updatedAt:d.updatedAt||Date.now()};if(idx===-1)state.items.push(item);else state.items[idx]={...item,department:state.items[idx].department};}persist();},err=>{console.error(err);alertToast('Cloud-Zugriff fehlgeschlagen');});
  listeners.set(sid,()=>{off1();off2();});flushPending();}
 async function startShare(){if(!needCloud())return;const l=active();if(l.sharedId&&l.ownerUid&&l.ownerUid!==cloudUser.uid){alertToast('Nur die erstellende Person kann neue Einladungen versenden');return;}if(l.sharedId)return createInvite(l);
  try{let sid=uid();let ref=sharedRef(sid),batch=cloud.batch();await ref.set({name:l.name,store:l.store,ownerUid:cloudUser.uid,createdAt:firebase.firestore.FieldValue.serverTimestamp()});for(const item of listItems(l.id))batch.set(ref.collection('items').doc(item.id),{text:item.text,amount:item.amount,done:item.done,updatedAt:item.updatedAt});await batch.commit();l.sharedId=sid;l.ownerUid=cloudUser.uid;persist();watchList(l);await createInvite(l);}catch(e){console.error(e);alertToast('Teilen nicht möglich: '+e.message);}}
@@ -414,6 +446,52 @@ async function startQRScan(){if(!needCloud())return;if(window.AndroidEinkauf?.sc
  catch(e){stopScan();alertToast('Kamera nicht verfügbar: '+e.message);}}
 window.onAndroidQRCode=code=>joinCode(code);
 // UI listeners
+const listCards = $('#listCards');
+let itemPress = null;
+let heldItemButton = null;
+
+function cancelItemPress() {
+  clearTimeout(itemPress?.timer);
+  itemPress = null;
+}
+
+listCards.addEventListener('pointerdown', event => {
+  if (!event.isPrimary || event.button !== 0) return;
+  heldItemButton = null;
+  cancelItemPress();
+  const button = event.target.closest('.item-main');
+  if (!button) return;
+  const {pointerId, clientX, clientY} = event;
+  const timer = setTimeout(() => {
+    cancelItemPress();
+    if (!button.isConnected || !$('#overlay').hidden) return;
+    heldItemButton = button;
+    categoryModal(button.dataset.id);
+  }, 500);
+  itemPress = {pointerId, clientX, clientY, timer};
+});
+
+window.addEventListener('pointermove', event => {
+  if (itemPress?.pointerId === event.pointerId &&
+      Math.hypot(event.clientX - itemPress.clientX, event.clientY - itemPress.clientY) > 10) {
+    cancelItemPress();
+  }
+}, {passive: true});
+for (const type of ['pointerup', 'pointercancel']) {
+  window.addEventListener(type, event => {
+    if (itemPress?.pointerId === event.pointerId) cancelItemPress();
+  });
+}
+window.addEventListener('blur', cancelItemPress);
+listCards.addEventListener('contextmenu', event => {
+  if (event.target.closest('.item-main') && (itemPress || heldItemButton)) event.preventDefault();
+});
+listCards.addEventListener('click', event => {
+  if (heldItemButton && event.detail && heldItemButton.contains(event.target)) {
+    heldItemButton = null;
+    event.stopImmediatePropagation();
+  }
+}, true);
 $('#closeModal').onclick=closeModal;$('#overlay').addEventListener('click',e=>{if(e.target===$('#overlay'))closeModal();});document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#overlay').hidden)closeModal();});
 $('#listCards').addEventListener('click',e=>{const card=e.target.closest('.list-card');if(!card)return;state.activeId=card.dataset.list;const item=e.target.closest('[data-act]');if(item){if(item.dataset.act==='toggle')toggleItem(item.dataset.id);if(item.dataset.act==='edit')itemModal(item.dataset.id);return;}const action=e.target.closest('[data-card-action]')?.dataset.cardAction;if(action==='menu')listModal();if(action==='scan')scanModal();if(action==='dictate')dictationModal(card.dataset.list);if(action==='share')pairModal();if(action==='recipe')recipeImportModal();if(action==='copy-gurkerl')copyCurrent();if(action==='export')exportModal();});
 $('#listCards').addEventListener('submit',e=>{if(!e.target.matches('.card-add'))return;e.preventDefault();const id=e.target.closest('.list-card').dataset.list;state.activeId=id;const input=e.target.elements.article;const v=input.value;if(!v.trim())return;input.value='';addItem(v);const fresh=[...$('#listCards').querySelectorAll('.list-card')].find(c=>c.dataset.list===id);fresh.querySelector('input').focus();});
