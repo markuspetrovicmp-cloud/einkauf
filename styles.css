@@ -298,3 +298,45 @@ body {
   content: "✓";
   margin-inline-start: 8px;
 }
+
+.list-card[data-kind="todo"] .gurkerl-copy,
+.list-card[data-kind="todo"] [data-card-action="recipe"],
+.list-card[data-kind="todo"] [data-card-action="export"],
+#exportFromMenuBtn[hidden] {
+  display: none;
+}
+
+.list-types {
+  border: 0;
+  margin: 0 0 14px;
+  padding: 0;
+}
+.list-types legend { margin-bottom: 6px; }
+.list-type-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.list-type-options label { position: relative; cursor: pointer; }
+.list-type-options input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.list-types .category-choice {
+  display: grid;
+  place-items: center;
+  min-height: 44px;
+  padding: 6px;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+}
+.list-type-options input:checked + .category-choice {
+  border-color: var(--ink);
+  background-color: var(--paper);
+}
+.list-type-options input:focus-visible + .category-choice {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}

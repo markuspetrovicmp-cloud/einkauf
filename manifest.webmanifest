@@ -1,7 +1,7 @@
 {
-  "name": "Einkauf – gemeinsam planen",
-  "short_name": "Einkauf",
-  "description": "Einkaufslisten für verschiedene Geschäfte, auch offline. Marpet Studio.",
+  "name": "Listen.",
+  "short_name": "Listen.",
+  "description": "Einkaufslisten und To-dos, auch offline. Marpet Studio.",
   "lang": "de-AT",
   "start_url": "./",
   "scope": "./",
