@@ -12,17 +12,17 @@ const uid=()=>crypto.randomUUID?crypto.randomUUID():`${Date.now()}-${Math.random
 const STORES=['Alle Geschäfte','Gurkerl','Hofer','Billa','Spar','Lidl','Bipa','dm','Müller','OBI'];
 const storeOptions=()=>STORES.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('');
 const LIST_COLORS = new Map([
-  ['terracotta', 'Terrakotta'],
-  ['sage', 'Salbei'],
-  ['honey', 'Honiggelb'],
-  ['clay', 'Rosé'],
-  ['petrol', 'Petrol'],
-  ['cream', 'Creme']
+  ['terracotta', 'Orange'],
+  ['sage', 'Türkis'],
+  ['honey', 'Meeresblau'],
+  ['clay', 'Korallrot'],
+  ['petrol', 'Tiefblau'],
+  ['cream', 'Schieferblau']
 ]);
 
 function listColor(list, index = state.lists.indexOf(list)) {
-  const palette = [...LIST_COLORS.keys()];
-  return LIST_COLORS.has(list.color) ? list.color : palette[Math.max(0, index) % palette.length];
+  const defaults = ['terracotta', 'sage', 'honey', 'petrol', 'clay', 'cream'];
+  return LIST_COLORS.has(list.color) ? list.color : defaults[Math.max(0, index) % defaults.length];
 }
 
 function colorField(selected) {

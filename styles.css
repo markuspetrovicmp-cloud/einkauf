@@ -175,7 +175,7 @@ body { background: var(--bg); }
   font-weight: 400;
   font-display: swap;
 }
-:root { --bg: #f4e7bc; }
+:root { --bg: #ede9df; --forest: #064d65; --ink: #073c4a; }
 .list-name, .item-department h3 {
   font-family: "Permanent Marker", system-ui, sans-serif;
   font-weight: 400;
@@ -184,13 +184,13 @@ body { background: var(--bg); }
 .list-card:not([open]) .list-name {
   font-size: clamp(.95rem, 3.75vw, 1.22rem);
 }
-[data-color="terracotta"] { --tile: #a94835; --tile-ink: #fff8e4; }
-[data-color="sage"] { --tile: #b9c9a3; --tile-ink: #183628; }
-[data-color="honey"] { --tile: #efc669; --tile-ink: #3d2b15; }
-[data-color="clay"] { --tile: #e7b5a8; --tile-ink: #482c25; }
-[data-color="petrol"] { --tile: #17483f; --tile-ink: #fff8e4; }
-[data-color="cream"] { --tile: #fff7e4; --tile-ink: #12382c; }
-.list-card:not([open]) { background: var(--tile); color: var(--tile-ink); }
+[data-color="terracotta"] { --tile: #ba4018; }
+[data-color="sage"] { --tile: #12768a; }
+[data-color="honey"] { --tile: #09627b; }
+[data-color="clay"] { --tile: #a9362c; }
+[data-color="petrol"] { --tile: #064d65; }
+[data-color="cream"] { --tile: #45586e; }
+.list-card:not([open]) { background: var(--tile); color: #fff; }
 .list-card:not([open]) .open-count { color: inherit; }
 .list-card:not([open]) .card-chevron { border-color: currentColor; }
 .list-colors {
@@ -205,3 +205,37 @@ body { background: var(--bg); }
 .color-choice { display: flex; gap: 6px; align-items: center; min-height: 36px; font-size: .85rem; cursor: pointer; }
 .color-choice input { width: 16px; height: 16px; margin: 0; accent-color: var(--forest); }
 .color-choice span { width: 17px; height: 17px; border-radius: 4px; background: var(--tile); border: 1px solid #0003; }
+
+/* The paper stays light at the top; the sage tint sits at the bottom. */
+body {
+  min-height: 100svh;
+  background: linear-gradient(to bottom, #ede9df 18%, #e5e6dc 58%, #cbd4c6 100%);
+  background-attachment: fixed;
+}
+#app { background: transparent; }
+.app-header .new-list-button {
+  position: relative;
+  background: transparent;
+  font-family: "Permanent Marker", system-ui, sans-serif;
+  font-size: 1rem;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.app-header .new-list-button::after {
+  content: "";
+  position: absolute;
+  inset: auto 12px 5px;
+  height: 2px;
+  background: #ba4018;
+  border-radius: 50%;
+  transform: rotate(-1deg);
+}
+.settings-white { background: transparent; }
+.list-card[open] { background: var(--tile, var(--forest)); }
+.list-card[open] > summary,
+.list-card[open] > summary .open-count,
+.card-top .card-meta,
+.card-top .card-meta button { color: #fff; }
+.list-card[open] > summary .open-count { background: #0004; }
+.list-card[open] > summary .card-chevron { border-color: #fff; }
+.card-top .gurkerl-copy, .card-add button { background: #d5e5e3; color: var(--forest); }
