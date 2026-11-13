@@ -1,6 +1,6 @@
 // Einkauf PWA: lokale Grunddateien vorhalten. Externe Firebase-/OCR-Skripte
 // werden bewusst NICHT zwischengespeichert.
-const CACHE = 'einkauf-bento-v23';
+const CACHE = 'einkauf-bento-v24';
 const ASSETS = [
   './', './index.html', './styles.css', './permanent-marker.ttf', './app.js', './qr.js',
   './firebase-config.js', './manifest.webmanifest',

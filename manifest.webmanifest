@@ -1,7 +1,7 @@
 {
   "name": "Listen.",
   "short_name": "Listen.",
-  "description": "Einkaufslisten und To-dos, auch offline. Marpet Studio.",
+  "description": "Einkaufslisten, To-dos und Wochenpläne, auch offline. Marpet Studio.",
   "lang": "de-AT",
   "start_url": "./",
   "scope": "./",

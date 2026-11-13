@@ -58,9 +58,94 @@ const openedLists=new Set(), shownDone=new Set();
 // Store metadata travels with shared lists under the existing Firestore schema.
 const TODO_STORE = 'Listen. · To-do';
 const isTodo = list => list?.store === TODO_STORE;
+const DISH_STORE = 'Listen. · Gerichte';
+const isDishes = list => list?.store === DISH_STORE;
+const isShopping = list => !isTodo(list) && !isDishes(list);
+
+const WEEKDAYS = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag'];
+const planDrafts = new Map();
+const dishKey = name => name.trim().toLocaleLowerCase('de-AT').replace(/\s+/g, ' ');
+
+function availableDishes(list, excluded = []) {
+  const seen = new Set(excluded.filter(Boolean).map(dishKey));
+  return listItems(list.id).map(item => item.text.trim()).filter(name => {
+    const key = dishKey(name);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function drawDish(pool) {
+  return pool.splice(Math.floor(Math.random() * pool.length), 1)[0] ?? '';
+}
+
+function newWeekPlan(list) {
+  const pool = availableDishes(list);
+  return WEEKDAYS.map(() => drawDish(pool));
+}
+
+function weekPlanHTML(list) {
+  const draft = planDrafts.get(list.id);
+  const plan = draft ?? list.weekPlan;
+  if (!plan) return '<button type="button" class="secondary wide" data-card-action="new-week">Wochenplan erstellen</button>';
+  const rows = WEEKDAYS.map((day, index) => `<li>
+    <span><strong>${day}</strong><br>${esc(plan[index] || '—')}</span>
+    <button type="button" data-card-action="reroll-day" data-day="${index}"
+      aria-label="${day} neu würfeln" title="${day} neu würfeln"
+      ${availableDishes(list, plan).length ? '' : 'disabled'}>⟳</button>
+  </li>`).join('');
+  return `<section class="week-plan item-department" aria-label="Wochenplan">
+    <h3><span>Wochenplan</span></h3>
+    <ul>${rows}</ul>
+    <div class="modal-actions">
+      <button type="button" class="secondary" data-card-action="new-week">Neu mischen</button>
+      ${draft ? '<button type="button" class="primary" data-card-action="save-week">Speichern</button>' : ''}
+      <button type="button" class="secondary" data-card-action="copy-week">Kopieren</button>
+      <button type="button" class="secondary" data-card-action="share-week">Teilen</button>
+    </div>
+  </section>`;
+}
+
+async function weekAction(list, action, button) {
+  const plan = planDrafts.get(list.id) ?? list.weekPlan;
+  if (action === 'new-week') {
+    if (!availableDishes(list).length) return alertToast('Füge zuerst ein Gericht hinzu.');
+    const proposal = newWeekPlan(list);
+    if (plan && proposal[1] && proposal.every((dish, index) => dish === plan[index])) {
+      [proposal[0], proposal[1]] = [proposal[1], proposal[0]];
+    }
+    planDrafts.set(list.id, proposal);
+    render();
+  } else if (action === 'reroll-day') {
+    const index = Number(button.dataset.day);
+    const replacement = drawDish(availableDishes(list, plan));
+    if (!replacement) return;
+    const draft = [...plan];
+    draft[index] = replacement;
+    planDrafts.set(list.id, draft);
+    render();
+  } else if (action === 'save-week') {
+    list.weekPlan = [...plan];
+    planDrafts.delete(list.id);
+    persist();
+    alertToast('Wochenplan gespeichert');
+  } else {
+    const message = WEEKDAYS.map((day, index) => day + ': ' + (plan[index] || '—')).join('\n');
+    if (action === 'share-week') return shareText('Wochenplan', message);
+    try {
+      await clipboardText(message);
+      alertToast('Wochenplan kopiert');
+    } catch {
+      alertToast('Kopieren nicht verfügbar');
+    }
+  }
+}
+
+
 
 function render(){let a=active();if(!a){state=initial();a=active();save();}
- const host=$('#listCards');const typed={};host.querySelectorAll('.card-add input').forEach(i=>{if(i.value)typed[i.closest('.list-card').dataset.list]=i.value;});const focusList=document.activeElement?.closest?.('.card-add')?.closest('.list-card')?.dataset.list;host.innerHTML=state.lists.map((l,index)=>{const all=listItems(l.id),todo=all.filter(x=>!x.done),done=all.filter(x=>x.done);return `<details name="einkauf-lists" class="list-card" data-kind="${isTodo(l)?'todo':'shopping'}" data-color="${listColor(l,index)}" data-list="${esc(l.id)}" ${openedLists.has(l.id)?'open':''}><summary><span class="list-name">${esc(l.name)}</span><span class="open-count">${todo.length} offen</span><span class="card-chevron" aria-hidden="true"></span></summary><div class="card-top"><div class="card-meta"><span>${esc(l.sharedId?(cloudUser?(navigator.onLine?'Gemeinsam · verbunden':'Gemeinsam · offline'):'Gemeinsam · Anmeldung nötig'):'Privat · auf diesem Gerät')}</span><button data-card-action="menu" aria-label="Liste verwalten">⋯</button></div><div class="card-actions"><button data-card-action="scan">Zettel importieren</button><button class="gurkerl-copy" data-card-action="copy-gurkerl" ${todo.length ? '' : 'disabled'}>Für Gurkerl kopieren</button></div></div><div class="card-body"><form class="card-add"><input name="article" aria-label="${isTodo(l)?'Aufgabe':'Artikel'} für ${esc(l.name)}" placeholder="${isTodo(l)?'Aufgabe hinzufügen':'z. B. 500g Tofu'}" maxlength="140" autocomplete="off"><button class="dictation-mic" data-card-action="dictate" aria-label="Artikel diktieren" type="button"><span aria-hidden="true">🎙</span></button><button aria-label="Artikel hinzufügen" type="submit">+</button></form><div class="items">${isTodo(l)?all.map(itemHTML).join(''):departmentHTML(todo)}</div>${(isTodo(l)?!all.length:!todo.length)?`<p class="empty">${done.length?'Alles erledigt.':'Deine Liste ist noch leer.'}</p>`:''}${!isTodo(l)&&done.length?`<details class="done-accordion" ${shownDone.has(l.id)?'open':''}><summary>Erledigt · ${done.length}<span class="card-chevron" aria-hidden="true"></span></summary><div class="items done-items">${done.map(itemHTML).join('')}</div></details>`:''}<div class="card-secondary"><button data-card-action="recipe">Aus Rezept</button><button data-card-action="share">Teilen</button><button data-card-action="export">Weitere Exporte</button></div></div></details>`;}).join('');
+ const host=$('#listCards');const typed={};host.querySelectorAll('.card-add input').forEach(i=>{if(i.value)typed[i.closest('.list-card').dataset.list]=i.value;});const focusList=document.activeElement?.closest?.('.card-add')?.closest('.list-card')?.dataset.list;host.innerHTML=state.lists.map((l,index)=>{const all=listItems(l.id),todo=all.filter(x=>!x.done),done=all.filter(x=>x.done);return `<details name="einkauf-lists" class="list-card" data-kind="${isDishes(l)?'dishes':isTodo(l)?'todo':'shopping'}" data-color="${listColor(l,index)}" data-list="${esc(l.id)}" ${openedLists.has(l.id)?'open':''}><summary><span class="list-name">${esc(l.name)}</span><span class="open-count">${isDishes(l)?all.length+' Gerichte':todo.length+' offen'}</span><span class="card-chevron" aria-hidden="true"></span></summary><div class="card-top"><div class="card-meta"><span>${esc(l.sharedId?(cloudUser?(navigator.onLine?'Gemeinsam · verbunden':'Gemeinsam · offline'):'Gemeinsam · Anmeldung nötig'):'Privat · auf diesem Gerät')}</span><button data-card-action="menu" aria-label="Liste verwalten">⋯</button></div><div class="card-actions" ${isDishes(l)?'hidden':''}><button data-card-action="scan">Zettel importieren</button><button class="gurkerl-copy" data-card-action="copy-gurkerl" ${todo.length ? '' : 'disabled'}>Für Gurkerl kopieren</button></div></div><div class="card-body"><form class="card-add"><input name="article" aria-label="${isDishes(l)?'Gericht':isTodo(l)?'Aufgabe':'Artikel'} für ${esc(l.name)}" placeholder="${isDishes(l)?'Gericht hinzufügen':isTodo(l)?'Aufgabe hinzufügen':'z. B. 500g Tofu'}" maxlength="140" autocomplete="off"><button class="dictation-mic" data-card-action="dictate" aria-label="Eintrag diktieren" type="button"><span aria-hidden="true">🎙</span></button><button aria-label="Eintrag hinzufügen" type="submit">+</button></form><div class="items">${isShopping(l)?departmentHTML(todo):all.map(item=>itemHTML(item,isDishes(l))).join('')}</div>${(isShopping(l)?!todo.length:!all.length)?`<p class="empty">${done.length?'Alles erledigt.':'Deine Liste ist noch leer.'}</p>`:''}${isShopping(l)&&done.length?`<details class="done-accordion" ${shownDone.has(l.id)?'open':''}><summary>Erledigt · ${done.length}<span class="card-chevron" aria-hidden="true"></span></summary><div class="items done-items">${done.map(item=>itemHTML(item)).join('')}</div></details>`:''}${isDishes(l)?weekPlanHTML(l):''}<div class="card-secondary" ${isDishes(l)?'hidden':''}><button data-card-action="recipe">Aus Rezept</button><button data-card-action="share">Teilen</button><button data-card-action="export">Weitere Exporte</button></div></div></details>`;}).join('');
  host.querySelectorAll('.list-card').forEach(c=>{const v=typed[c.dataset.list];if(v!=null)c.querySelector('.card-add input').value=v;if(focusList&&c.dataset.list===focusList)c.querySelector('.card-add input').focus();});
  host.querySelectorAll('.list-card').forEach(el=>el.addEventListener('toggle',()=>{const id=el.dataset.list;if(el.open){if(!openedLists.has(id)){openedLists.clear();openedLists.add(id);state.activeId=id;save();window.scrollTo(0,0);}}else openedLists.delete(id);}));
  host.querySelectorAll('.done-accordion').forEach(el=>el.addEventListener('toggle',()=>{const id=el.closest('.list-card').dataset.list;el.open?shownDone.add(id):shownDone.delete(id);}));
@@ -93,7 +178,7 @@ function itemDepartment(item) {
 
 function categoryModal(id) {
   const item = state.items.find(entry => entry.id === id);
-  if (!item || isTodo(state.lists.find(list => list.id === item.listId))) return;
+  if (!item || !isShopping(state.lists.find(list => list.id === item.listId))) return;
   const options = departments.map(([label]) =>
     `<button class="category-choice" type="button" data-department="${esc(label)}"
       aria-pressed="${item.department === label}"><span>${esc(label)}</span></button>`
@@ -122,7 +207,7 @@ function departmentHTML(items) {
   const grouped = new Map(departments.map(([label]) => [label, []]));
   for (const item of items) grouped.get(itemDepartment(item)).push(item);
   return [...grouped].filter(([, group]) => group.length).map(([label, group]) =>
-    `<section class="item-department"><h3><span>${esc(label)}</span></h3>${group.map(itemHTML).join('')}</section>`
+    `<section class="item-department"><h3><span>${esc(label)}</span></h3>${group.map(item=>itemHTML(item)).join('')}</section>`
   ).join('');
 }
 
@@ -135,29 +220,30 @@ function itemInput(item) {
     : `${item.text} — ${item.amount}`;
 }
 
-function itemHTML(x){return `<div class="item ${x.done?'done':''}" data-id="${esc(x.id)}"><button class="check ${x.done?'checked':''}" data-act="toggle" data-id="${esc(x.id)}" aria-label="${x.done?'Nicht erledigt':'Erledigt'}">${x.done?'✓':''}</button><button class="item-main" data-act="edit" data-id="${esc(x.id)}">${esc(x.text)}${x.amount?`<em>${esc(x.amount)}</em>`:''}</button><button class="item-edit" data-act="edit" data-id="${esc(x.id)}" aria-label="Bearbeiten">⋯</button></div>`;}
+function itemHTML(x,dish=false){return `<div class="item ${dish?'dish-item':x.done?'done':''}" data-id="${esc(x.id)}">${dish?'':`<button class="check ${x.done?'checked':''}" data-act="toggle" data-id="${esc(x.id)}" aria-label="${x.done?'Nicht erledigt':'Erledigt'}">${x.done?'✓':''}</button>`}<button class="item-main" data-act="edit" data-id="${esc(x.id)}">${esc(x.text)}${x.amount?`<em>${esc(x.amount)}</em>`:''}</button><button class="item-edit" data-act="edit" data-id="${esc(x.id)}" aria-label="Bearbeiten">⋯</button></div>`;}
 function persist(){save();render();}
 function useList(id){if(state.lists.some(x=>x.id===id)){state.activeId=id;persist();}}
-function addItem(text,amount=''){const a=active(),t=text.trim();if(!t)return;const parsed=isTodo(a)?{text:t,amount:''}:splitQuantity(t);let item={id:uid(),listId:a.id,text:(amount?t:parsed.text).slice(0,140),amount:String(amount||parsed.amount).trim().slice(0,100),done:false,updatedAt:Date.now()};state.items.push(item);persist();syncItem(a,item,'set');}
+function addItem(text,amount=''){const a=active(),t=text.trim();if(!t)return;const parsed=!isShopping(a)?{text:t,amount:''}:splitQuantity(t);let item={id:uid(),listId:a.id,text:(amount?t:parsed.text).slice(0,140),amount:String(amount||parsed.amount).trim().slice(0,100),done:false,updatedAt:Date.now()};state.items.push(item);persist();syncItem(a,item,'set');}
 function editItem(id,text,amount){const item=state.items.find(i=>i.id===id);if(!item||!text.trim())return;item.text=text.trim().slice(0,140);item.amount=amount.trim().slice(0,100);item.updatedAt=Date.now();persist();syncItem(state.lists.find(l=>l.id===item.listId),item,'set');}
 function toggleItem(id){const item=state.items.find(x=>x.id===id);if(!item)return;item.done=!item.done;item.updatedAt=Date.now();persist();syncItem(state.lists.find(l=>l.id===item.listId),item,'set');}
 function deleteItem(id){const item=state.items.find(x=>x.id===id);if(!item)return;const l=state.lists.find(x=>x.id===item.listId);state.items=state.items.filter(x=>x.id!==id);persist();syncItem(l,item,'delete');}
 function moveItem(id,targetListId){const item=state.items.find(x=>x.id===id),oldList=state.lists.find(x=>x.id===item?.listId),dest=state.lists.find(x=>x.id===targetListId);if(!item||!dest||!oldList||oldList.id===dest.id)return;syncItem(oldList,item,'delete');item.listId=dest.id;item.updatedAt=Date.now();syncItem(dest,item,'set');persist();alertToast('Artikel in „'+dest.name+'“ verschoben');}
 function createList(name,store,color){if(!name.trim())return;const l={id:uid(),name:name.trim().slice(0,70),store:store.trim().slice(0,60)||'Alle Geschäfte',sharedId:null,color};state.lists.push(l);state.activeId=l.id;openedLists.clear();openedLists.add(l.id);persist();}
 function newListModal(){
- openModal('Neue Liste',`<form id="listForm"><fieldset class="list-types item-department"><legend>Listentyp</legend><div class="list-type-options"><label><input type="radio" name="listType" value="shopping" checked><span class="category-choice"><span>Einkauf</span></span></label><label><input type="radio" name="listType" value="todo"><span class="category-choice"><span>To-do</span></span></label></div></fieldset><label class="field">Name der Liste<input name="name" placeholder="z. B. Wocheneinkauf" maxlength="70" required autofocus></label><label class="field" id="newStoreLabel">Geschäft<select name="store" id="newStore">${storeOptions()}<option value="__custom__">Anderes Geschäft …</option></select></label><label class="field hidden" id="customStoreLabel">Geschäft eingeben<input name="customStore" maxlength="60" placeholder="z. B. Wochenmarkt"></label>${colorField(listColor({},state.lists.length))}<div class="modal-actions"><button class="primary wide" type="submit">Liste erstellen</button></div></form>`);
+ openModal('Neue Liste',`<form id="listForm"><fieldset class="list-types item-department"><legend>Listentyp</legend><div class="list-type-options"><label><input type="radio" name="listType" value="shopping" checked><span class="category-choice"><span>Einkauf</span></span></label><label><input type="radio" name="listType" value="todo"><span class="category-choice"><span>To-do</span></span></label><label><input type="radio" name="listType" value="dishes"><span class="category-choice"><span>Gerichte</span></span></label></div></fieldset><label class="field">Name der Liste<input name="name" placeholder="z. B. Wocheneinkauf" maxlength="70" required autofocus></label><label class="field" id="newStoreLabel">Geschäft<select name="store" id="newStore">${storeOptions()}<option value="__custom__">Anderes Geschäft …</option></select></label><label class="field hidden" id="customStoreLabel">Geschäft eingeben<input name="customStore" maxlength="60" placeholder="z. B. Wochenmarkt"></label>${colorField(listColor({},state.lists.length))}<div class="modal-actions"><button class="primary wide" type="submit">Liste erstellen</button></div></form>`);
  const form=$('#listForm'), typeSelect=form.elements.listType, storeSelect=$('#newStore'), customLabel=$('#customStoreLabel');
  form.addEventListener('change',event=>{
    if(event.target.name!=='listType')return;
    const todo=typeSelect.value==='todo';
-   $('#newStoreLabel').classList.toggle('hidden',todo);
-   customLabel.classList.toggle('hidden',todo||storeSelect.value!=='__custom__');
-   $('#listForm').elements.name.placeholder=todo?'z. B. Schule':'z. B. Wocheneinkauf';
+   const shopping=typeSelect.value==='shopping';
+   $('#newStoreLabel').classList.toggle('hidden',!shopping);
+   customLabel.classList.toggle('hidden',!shopping||storeSelect.value!=='__custom__');
+   $('#listForm').elements.name.placeholder=shopping?'z. B. Wocheneinkauf':todo?'z. B. Schule':'z. B. Lieblingsgerichte';
  });
  storeSelect.onchange=()=>{customLabel.classList.toggle('hidden',storeSelect.value!=='__custom__');if(!customLabel.classList.contains('hidden'))customLabel.querySelector('input').focus();};
- $('#listForm').onsubmit=e=>{e.preventDefault();const store=typeSelect.value==='todo'?TODO_STORE:(storeSelect.value==='__custom__'?formVal('customStore'):storeSelect.value);if(!store||(typeSelect.value!=='todo'&&store===TODO_STORE)){alertToast('Bitte ein anderes Geschäft eingeben');return;}createList(formVal('name'),store,e.currentTarget.elements.listColor.value);closeModal();alertToast('Liste erstellt');};
+ $('#listForm').onsubmit=e=>{e.preventDefault();const store=typeSelect.value==='dishes'?DISH_STORE:typeSelect.value==='todo'?TODO_STORE:(storeSelect.value==='__custom__'?formVal('customStore'):storeSelect.value);if(!store||(typeSelect.value==='shopping'&&[TODO_STORE,DISH_STORE].includes(store))){alertToast('Bitte ein anderes Geschäft eingeben');return;}createList(formVal('name'),store,e.currentTarget.elements.listColor.value);closeModal();alertToast('Liste erstellt');};
 }
-function itemModal(id){const x=state.items.find(z=>z.id===id);if(!x)return;const todo=isTodo(state.lists.find(list=>list.id===x.listId));const otherListOptions=state.lists.map(l=>`<option value="${esc(l.id)}" ${l.id===x.listId?'selected':''}>${esc(l.name)} (${isTodo(l)?'To-do':esc(l.store)})</option>`).join('');openModal(todo?'Aufgabe bearbeiten':'Artikel bearbeiten',`<form id="itemForm"><label class="field">Artikel<input name="name" value="${esc(itemInput(x))}" maxlength="243" placeholder="z. B. 500g Tofu" required></label><label class="field">Liste<select name="targetList">${otherListOptions}</select></label><div class="modal-actions"><button class="primary" type="submit">Speichern</button>${todo?'':'<button class="secondary" id="itemCategoryBtn" type="button">Kategorie ändern</button>'}<button class="danger" id="deleteItemBtn" type="button">Löschen</button></div></form>`);$('#itemForm').onsubmit=e=>{e.preventDefault();const value=formVal('name');if(value!==itemInput(x)){const parsed=todo?{text:value,amount:''}:splitQuantity(value);editItem(id,parsed.text,parsed.amount);}const dest=formVal('targetList');if(dest && dest!==x.listId)moveItem(id,dest);closeModal();};if(!todo)$('#itemCategoryBtn').onclick=()=>categoryModal(id);$('#deleteItemBtn').onclick=()=>{if(confirm('Artikel löschen?')){deleteItem(id);closeModal();}};}
+function itemModal(id){const x=state.items.find(z=>z.id===id);if(!x)return;const list=state.lists.find(list=>list.id===x.listId), todo=isTodo(list), dish=isDishes(list);const otherListOptions=state.lists.map(l=>`<option value="${esc(l.id)}" ${l.id===x.listId?'selected':''}>${esc(l.name)} (${isDishes(l)?'Gerichte':isTodo(l)?'To-do':esc(l.store)})</option>`).join('');openModal(dish?'Gericht bearbeiten':todo?'Aufgabe bearbeiten':'Artikel bearbeiten',`<form id="itemForm"><label class="field">Artikel<input name="name" value="${esc(itemInput(x))}" maxlength="243" placeholder="z. B. 500g Tofu" required></label><label class="field">Liste<select name="targetList">${otherListOptions}</select></label><div class="modal-actions"><button class="primary" type="submit">Speichern</button>${todo||dish?'':'<button class="secondary" id="itemCategoryBtn" type="button">Kategorie ändern</button>'}<button class="danger" id="deleteItemBtn" type="button">Löschen</button></div></form>`);$('#itemForm').onsubmit=e=>{e.preventDefault();const value=formVal('name');if(value!==itemInput(x)){const parsed=todo||dish?{text:value,amount:''}:splitQuantity(value);editItem(id,parsed.text,parsed.amount);}const dest=formVal('targetList');if(dest && dest!==x.listId)moveItem(id,dest);closeModal();};if(!todo&&!dish)$('#itemCategoryBtn').onclick=()=>categoryModal(id);$('#deleteItemBtn').onclick=()=>{if(confirm('Artikel löschen?')){deleteItem(id);closeModal();}};}
 function listModal(){let l=active();openModal('Liste verwalten',`
 <div class="list-menu-grid">
   <button id="syncListBtn" class="menu-action" type="button"><span>♧</span> Liste mit Partnerin verbinden <small>QR-Code / Synchronisierung</small></button>
@@ -166,15 +252,15 @@ function listModal(){let l=active();openModal('Liste verwalten',`
   <button id="cutEntriesBtn" class="menu-action" type="button"><span>↗</span> Offene Einträge verschieben <small>Dann andere Liste auswählen und einfügen</small></button>
   <button id="pasteEntriesBtn" class="menu-action" type="button"><span>↙</span> Einträge einfügen <small>Aus anderer Liste oder als Text</small></button>
   <button id="shareEntriesBtn" class="menu-action" type="button"><span>◇</span> Einträge teilen <small>Über das Android-Teilen-Menü</small></button>
-  <button id="exportFromMenuBtn" ${isTodo(l)?'hidden':''} class="menu-action" type="button"><span>⇧</span> Export für Gurkerl <small>Liste kopieren, Text oder CSV</small></button>
+  <button id="exportFromMenuBtn" ${!isShopping(l)?'hidden':''} class="menu-action" type="button"><span>⇧</span> Export für Gurkerl <small>Liste kopieren, Text oder CSV</small></button>
 </div>
 <hr class="divider">
-<form id="listEditForm"><label class="field">Listenname<input name="name" maxlength="70" value="${esc(l.name)}" required></label>${isTodo(l)?'':`<label class="field">Geschäft<input name="store" list="storeSuggestions" maxlength="60" value="${esc(l.store)}" autocomplete="off"><datalist id="storeSuggestions">${storeOptions()}</datalist></label>`}${colorField(listColor(l))}<div class="modal-actions"><button class="primary" type="submit">Speichern</button><button class="secondary" id="clearDoneBtn" type="button">Erledigte entfernen</button></div></form>
+<form id="listEditForm"><label class="field">Listenname<input name="name" maxlength="70" value="${esc(l.name)}" required></label>${!isShopping(l)?'':`<label class="field">Geschäft<input name="store" list="storeSuggestions" maxlength="60" value="${esc(l.store)}" autocomplete="off"><datalist id="storeSuggestions">${storeOptions()}</datalist></label>`}${colorField(listColor(l))}<div class="modal-actions"><button class="primary" type="submit">Speichern</button><button class="secondary" id="clearDoneBtn" type="button">Erledigte entfernen</button></div></form>
 <hr class="divider"><button class="danger" id="clearListBtn" type="button">Liste leeren</button> <button class="danger" id="deleteListBtn" type="button">Liste löschen</button>
 <p class="info">Bei einer geteilten Liste sehen alle verbundenen Personen Änderungen an den Artikeln. Synchronisierung funktioniert erst nach der Firebase-Einrichtung.</p>`);
- $('#listEditForm').onsubmit=e=>{e.preventDefault();l.name=formVal('name').slice(0,70);if(!isTodo(l))l.store=formVal('store').slice(0,60)||'Alle Geschäfte';l.color=e.currentTarget.elements.listColor.value;persist();syncMeta(l);closeModal();};
+ $('#listEditForm').onsubmit=e=>{e.preventDefault();l.name=formVal('name').slice(0,70);if(isShopping(l))l.store=formVal('store').slice(0,60)||'Alle Geschäfte';l.color=e.currentTarget.elements.listColor.value;persist();syncMeta(l);closeModal();};
  $('#clearDoneBtn').onclick=()=>{const done=listItems(l.id).filter(i=>i.done);if(!done.length){alertToast('Nichts zu entfernen');return;}if(confirm(`${done.length} erledigte Artikel löschen?`)){done.forEach(i=>{state.items=state.items.filter(z=>z.id!==i.id);syncItem(l,i,'delete');});persist();closeModal();}};
- $('#deleteListBtn').onclick=()=>{if(state.lists.length===1){alertToast('Mindestens eine Liste behalten');return;}if(confirm('Liste wirklich von diesem Gerät entfernen?')){stopListen(l.sharedId);state.lists=state.lists.filter(z=>z.id!==l.id);state.items=state.items.filter(z=>z.listId!==l.id);state.activeId=state.lists[0].id;persist();closeModal();}};
+ $('#deleteListBtn').onclick=()=>{if(state.lists.length===1){alertToast('Mindestens eine Liste behalten');return;}if(confirm('Liste wirklich von diesem Gerät entfernen?')){planDrafts.delete(l.id);stopListen(l.sharedId);state.lists=state.lists.filter(z=>z.id!==l.id);state.items=state.items.filter(z=>z.listId!==l.id);state.activeId=state.lists[0].id;persist();closeModal();}};
  $('#cloneListBtn').onclick=cloneCurrentList;
  $('#clearListBtn').onclick=clearCurrentList;
  $('#copyEntriesBtn').onclick=()=>rememberEntries('copy');
@@ -232,10 +318,13 @@ function pasteEntries(){
 async function shareEntries(){
  const l=active(),text=textFor(l);
  if(!text){alertToast('Keine offenen Einträge');return;}
- const message=l.name+(isTodo(l)?'':' ('+l.store+')')+'\n\n'+text;
+ const message=l.name+(!isShopping(l)?'':' ('+l.store+')')+'\n\n'+text;
  closeModal();
+ return shareText(l.name,message);
+}
+async function shareText(title,message){
  if(window.AndroidEinkauf?.shareText){window.AndroidEinkauf.shareText(message);return;}
- if(navigator.share){try{await navigator.share({title:l.name,text:message});}catch(e){}return;}
+ if(navigator.share){try{await navigator.share({title,text:message});}catch(e){}return;}
  try{await clipboardText(message);alertToast('Einträge zum Teilen kopiert');}catch(e){alertToast('Teilen nicht verfügbar');}
 }
 function cleanLines(text){return String(text||'').replace(/\r/g,'').split('\n').map(s=>s.replace(/^\s*(?:[-•*☐☑✓]\s*|\d{1,3}[.)]\s+|\?\s+)/,'').replace(/[\s\-]+$/,'').trim()).filter(x=>x.length>0&&x.length<170).slice(0,150);}
@@ -295,7 +384,7 @@ function stopDictation() {
 }
 
 function dictationModal(listId) {
-  const todo = isTodo(state.lists.find(list => list.id === listId));
+  const todo = !isShopping(state.lists.find(list => list.id === listId));
   openModal('Liste diktieren', `<p class="info">${todo?'Diktiere eine Aufgabe pro Satz. Du kannst die Zeilen vor dem Übernehmen korrigieren.':'Sprich die Artikel einfach hintereinander, etwa „Milch Brot 500 Gramm Tofu“. Du kannst die Zeilen vor dem Übernehmen korrigieren.'}</p>
     <p id="dictationStatus" class="scan-status" role="status"></p>
     <label class="field">Artikel prüfen<textarea id="dictationText" rows="6" placeholder="Ein Artikel pro Zeile"></textarea></label>
@@ -376,7 +465,7 @@ function dictationModal(listId) {
 }
 
 function splitQuantity(raw){const s=String(raw||'').trim();const note=s.match(/^(.+?)\s+—\s+(.+)$/);if(note)return {text:note[1].trim(),amount:note[2].trim()};const prefix=s.match(/^(\d+(?:[,.]\d+)?\s*(?:kg|g|l|liter|ml|stk\.?|st\.?|packungen?|stück|x|becher|flaschen?|dosen?|bund|päckchen|el|tl))\s+(.+)$/i);if(prefix)return {amount:prefix[1].trim(),text:prefix[2].trim()};const simple=s.match(/^(\d+(?:[,.]\d+)?)\s*[x×]\s+(.+)$/i);if(simple)return {amount:simple[1]+' ×',text:simple[2].trim()};const numeric=s.match(/^(\d+(?:[,.]\d+)?)\s+(.+)$/);if(numeric)return {amount:numeric[1],text:numeric[2].trim()};return {amount:'',text:s};}
-function addMultiple(raw,listId){const lines=cleanLines(raw),l=state.lists.find(x=>x.id===listId)||active();let added=0,skipped=0;const seen=new Set(listItems(l.id).filter(i=>!i.done).map(i=>`${i.text.toLocaleLowerCase('de').trim()}|${i.amount.toLocaleLowerCase('de').trim()}`));for(const line of lines){const parsed=isTodo(l)?{text:line,amount:''}:splitQuantity(line);const key=`${parsed.text.toLocaleLowerCase('de').trim()}|${parsed.amount.toLocaleLowerCase('de').trim()}`;if(seen.has(key)){skipped++;continue;}seen.add(key);const item={id:uid(),listId:l.id,text:parsed.text.slice(0,140),amount:parsed.amount.slice(0,100),done:false,updatedAt:Date.now()};state.items.push(item);syncItem(l,item,'set');added++;}persist();if(skipped)alertToast(`${skipped} doppelte Artikel übersprungen`);return added;}
+function addMultiple(raw,listId){const lines=cleanLines(raw),l=state.lists.find(x=>x.id===listId)||active();let added=0,skipped=0;const seen=new Set(listItems(l.id).filter(i=>!i.done).map(i=>`${i.text.toLocaleLowerCase('de').trim()}|${i.amount.toLocaleLowerCase('de').trim()}`));for(const line of lines){const parsed=!isShopping(l)?{text:line,amount:''}:splitQuantity(line);const key=`${parsed.text.toLocaleLowerCase('de').trim()}|${parsed.amount.toLocaleLowerCase('de').trim()}`;if(seen.has(key)){skipped++;continue;}seen.add(key);const item={id:uid(),listId:l.id,text:parsed.text.slice(0,140),amount:parsed.amount.slice(0,100),done:false,updatedAt:Date.now()};state.items.push(item);syncItem(l,item,'set');added++;}persist();if(skipped)alertToast(`${skipped} doppelte Artikel übersprungen`);return added;}
 function textFor(list,openOnly=true){const items=listItems(list.id).filter(x=>!openOnly||!x.done);return items.map(x=>`${x.amount?x.amount+' ':''}${x.text}`).join('\n');}
 async function copyCurrent(){let t=textFor(active());if(!t){alertToast('Keine offenen Artikel zum Kopieren');return;}const full=`Finde bitte möglichst günstige passende Produkte für diese Einkaufsliste und füge sie meinem Warenkorb hinzu. Vergleiche den Grundpreis, beachte Mengen und frage bei Unklarheiten nach:\n\n${t}`;try{await clipboardText(full);alertToast('Für Gurkerl / Maia kopiert');}catch(e){openModal('Liste zum Kopieren',`<textarea class="editarea" readonly id="copyArea">${esc(full)}</textarea><p class="info">Text markieren und kopieren.</p>`);$('#copyArea').select();}}
 function downloadFile(filename,text,type){if(window.AndroidEinkauf?.saveFile){window.AndroidEinkauf.saveFile(filename,text,type);return;}const b=new Blob([text],{type});let url=URL.createObjectURL(b),a=document.createElement('a');a.href=url;a.download=filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);}
@@ -432,7 +521,7 @@ function settingsModal(){openModal('Einstellungen & Backup',`<label class="field
    catch { alertToast('Farbschema konnte nicht dauerhaft gespeichert werden'); }
  };
  $('#googleLogin').onclick=()=>{if(!window.firebase){alertToast('Verbindung wird geladen. Bitte kurz warten.');return;}googleLogin();};$('#googleLogout').onclick=async()=>{if(window.firebase)await firebase.auth().signOut();settingsModal();};$('#backupSave').onclick=backup;$('#backupLoad').onclick=()=>$('#backupFile').click();$('#openPair').onclick=pairModal;}
-async function restore(file){if(!file)return;try{let j=JSON.parse(await file.text());if(j.format!=='einkauf-v1'||!Array.isArray(j.data?.lists)||!Array.isArray(j.data?.items)||j.data.lists.length>100||j.data.items.length>10000)throw Error('Unbekanntes Dateiformat');const ids=new Set(j.data.lists.map(x=>x.id));let lists=j.data.lists.filter(x=>typeof x.id==='string'&&typeof x.name==='string').map(x=>({id:x.id.slice(0,80),name:x.name.slice(0,70),store:String(x.store||'Alle Geschäfte').slice(0,60),sharedId:null,color:LIST_COLORS.has(x.color)?x.color:undefined}));let items=j.data.items.filter(x=>ids.has(x.listId)&&typeof x.text==='string').map(x=>({id:String(x.id).slice(0,80),listId:String(x.listId).slice(0,80),text:x.text.slice(0,140),amount:String(x.amount||'').slice(0,100),done:!!x.done,department:departments.some(([label])=>label===x.department)?x.department:undefined,updatedAt:Number(x.updatedAt)||Date.now()}));if(!lists.length)throw Error('Keine Listen');if(!confirm('Aktuelle lokale Listen durch dieses Backup ersetzen?'))return;listeners.forEach(off=>off());listeners.clear();state={...initial(),lists,items,activeId:lists[0].id};persist();closeModal();alertToast('Backup wiederhergestellt');}catch(e){alertToast('Backup ungültig: '+e.message);}}
+async function restore(file){if(!file)return;try{let j=JSON.parse(await file.text());if(j.format!=='einkauf-v1'||!Array.isArray(j.data?.lists)||!Array.isArray(j.data?.items)||j.data.lists.length>100||j.data.items.length>10000)throw Error('Unbekanntes Dateiformat');const ids=new Set(j.data.lists.map(x=>x.id));let lists=j.data.lists.filter(x=>typeof x.id==='string'&&typeof x.name==='string').map(x=>({id:x.id.slice(0,80),name:x.name.slice(0,70),store:String(x.store||'Alle Geschäfte').slice(0,60),sharedId:null,weekPlan:isDishes(x)&&Array.isArray(x.weekPlan)?WEEKDAYS.map((_,i)=>typeof x.weekPlan[i]==='string'?x.weekPlan[i].slice(0,140):''):undefined,color:LIST_COLORS.has(x.color)?x.color:undefined}));let items=j.data.items.filter(x=>ids.has(x.listId)&&typeof x.text==='string').map(x=>({id:String(x.id).slice(0,80),listId:String(x.listId).slice(0,80),text:x.text.slice(0,140),amount:String(x.amount||'').slice(0,100),done:!!x.done,department:departments.some(([label])=>label===x.department)?x.department:undefined,updatedAt:Number(x.updatedAt)||Date.now()}));if(!lists.length)throw Error('Keine Listen');if(!confirm('Aktuelle lokale Listen durch dieses Backup ersetzen?'))return;listeners.forEach(off=>off());listeners.clear();planDrafts.clear();state={...initial(),lists,items,activeId:lists[0].id};persist();closeModal();alertToast('Backup wiederhergestellt');}catch(e){alertToast('Backup ungültig: '+e.message);}}
 // Firebase cloud. Auth is per-device, users are authenticated anonymously.
 let authWatching=false;
 async function applyUser(user){for(const off of listeners.values())off();listeners.clear();cloudUser=null;firebaseReady=false;cloudError='';
@@ -491,7 +580,7 @@ listCards.addEventListener('pointerdown', event => {
   heldItemButton = null;
   cancelItemPress();
   const button = event.target.closest('.item-main');
-  if (!button || button.closest('[data-kind=todo]')) return;
+  if (!button || !button.closest('[data-kind=shopping]')) return;
   const {pointerId, clientX, clientY} = event;
   const timer = setTimeout(() => {
     cancelItemPress();
@@ -524,7 +613,7 @@ listCards.addEventListener('click', event => {
   }
 }, true);
 $('#closeModal').onclick=closeModal;$('#overlay').addEventListener('click',e=>{if(e.target===$('#overlay'))closeModal();});document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#overlay').hidden)closeModal();});
-$('#listCards').addEventListener('click',e=>{const card=e.target.closest('.list-card');if(!card)return;state.activeId=card.dataset.list;const item=e.target.closest('[data-act]');if(item){if(item.dataset.act==='toggle')toggleItem(item.dataset.id);if(item.dataset.act==='edit')itemModal(item.dataset.id);return;}const action=e.target.closest('[data-card-action]')?.dataset.cardAction;if(action==='menu')listModal();if(action==='scan')scanModal();if(action==='dictate')dictationModal(card.dataset.list);if(action==='share')pairModal();if(action==='recipe')recipeImportModal();if(action==='copy-gurkerl')copyCurrent();if(action==='export')exportModal();});
+$('#listCards').addEventListener('click',e=>{const card=e.target.closest('.list-card');if(!card)return;state.activeId=card.dataset.list;const item=e.target.closest('[data-act]');if(item){if(item.dataset.act==='toggle')toggleItem(item.dataset.id);if(item.dataset.act==='edit')itemModal(item.dataset.id);return;}const action=e.target.closest('[data-card-action]')?.dataset.cardAction;if(['new-week','reroll-day','save-week','copy-week','share-week'].includes(action))return weekAction(active(),action,e.target.closest('[data-card-action]'));if(action==='menu')listModal();if(action==='scan')scanModal();if(action==='dictate')dictationModal(card.dataset.list);if(action==='share')pairModal();if(action==='recipe')recipeImportModal();if(action==='copy-gurkerl')copyCurrent();if(action==='export')exportModal();});
 $('#listCards').addEventListener('submit',e=>{if(!e.target.matches('.card-add'))return;e.preventDefault();const id=e.target.closest('.list-card').dataset.list;state.activeId=id;const input=e.target.elements.article;const v=input.value;if(!v.trim())return;input.value='';addItem(v);const fresh=[...$('#listCards').querySelectorAll('.list-card')].find(c=>c.dataset.list===id);fresh.querySelector('input').focus();});
 $('#newListBtn').onclick=newListModal;$('#settingsBtn').onclick=settingsModal;
 $('#scanFile').onchange=e=>{handleImage(e.target.files?.[0]);e.target.value='';};$('#backupFile').onchange=e=>{restore(e.target.files?.[0]);e.target.value='';};

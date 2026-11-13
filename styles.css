@@ -381,3 +381,25 @@ body {
 [data-theme="sage-olive"] .item-department :is(h3, .category-choice) span {
   background: linear-gradient(177deg, transparent 40%, var(--gold) 41% 88%, transparent 89%);
 }
+
+.list-type-options { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.list-card[data-kind="dishes"] [hidden] { display: none; }
+.item.dish-item { grid-template-columns: minmax(0, 1fr) auto; }
+.week-plan {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper);
+}
+.week-plan ul { list-style: none; margin: 4px 0 0; padding: 0; }
+.week-plan li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.week-plan li button { min-width: 44px; min-height: 44px; }
