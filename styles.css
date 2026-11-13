@@ -418,3 +418,20 @@ body {
   font-weight: 750;
 }
 .week-plan li button { flex-shrink: 0; }
+
+.ingredient-options { margin-bottom: 14px; }
+.ingredient-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+.ingredient-option input {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--forest);
+}
+.ingredient-option span { overflow-wrap: anywhere; }

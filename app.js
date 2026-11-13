@@ -85,6 +85,76 @@ function newWeekPlan(list) {
   return WEEKDAYS.map(() => drawDish(pool));
 }
 
+const ingredientUnits = new Map([
+  ['kg', ['g', 1000]], ['g', ['g', 1]], ['l', ['ml', 1000]],
+  ['liter', ['ml', 1000]], ['ml', ['ml', 1]],
+  ['stück', ['', 1]], ['stk', ['', 1]], ['st', ['', 1]],
+  ['', ['', 1]], ['x', ['', 1]], ['×', ['', 1]]
+]);
+
+function collectIngredients(list, plan) {
+  const dishes = listItems(list.id);
+  const missing = [];
+  const totals = new Map();
+  for (const name of plan.filter(Boolean)) {
+    const dish = dishes.find(item => dishKey(item.text) === dishKey(name));
+    const lines = cleanLines(dish?.ingredients);
+    if (!lines.length) missing.push(name);
+    for (const line of lines) {
+      const {text, amount} = splitQuantity(line);
+      const match = amount.match(/^(\d+(?:[,.]\d+)?)\s*(.*)$/);
+      const unit = match?.[2].toLowerCase().replace(/\.$/, '') ?? '';
+      const [base, factor] = ingredientUnits.get(unit) ?? [unit, 1];
+      const quantity = match ? Number(match[1].replace(',', '.')) * factor : null;
+      const key = JSON.stringify([dishKey(text), match ? base : amount, !!match]);
+      const entry = totals.get(key) ?? {text, amount, base, total: 0, numeric: !!match};
+      if (match) entry.total += quantity;
+      totals.set(key, entry);
+    }
+  }
+  const format = new Intl.NumberFormat('de-AT', {useGrouping: false, maximumFractionDigits: 6});
+  const entries = [...totals.values()].map(({text, amount, base, total, numeric}) => {
+    if (!numeric) return {text, amount};
+    const largeUnit = total >= 1000 && (base === 'g' || base === 'ml');
+    const unit = largeUnit ? (base === 'g' ? 'kg' : 'l') : base;
+    return {text, amount: format.format(largeUnit ? total / 1000 : total) + (unit ? ' ' + unit : '')};
+  });
+  return {entries, missing};
+}
+
+function ingredientPreview(list, plan) {
+  const shoppingLists = state.lists.filter(isShopping);
+  if (!shoppingLists.length) return alertToast('Erstelle zuerst eine Einkaufsliste.');
+  const {entries, missing} = collectIngredients(list, plan);
+  const choices = entries.map(({text, amount}, index) =>
+    `<label class="ingredient-option"><input type="checkbox" name="ingredient" value="${index}" checked>
+      <span>${esc([amount, text].filter(Boolean).join(' '))}</span></label>`
+  ).join('');
+  openModal('Zutaten übernehmen', `
+    ${missing.length ? `<p class="notice">Zutaten fehlen bei: ${esc(missing.join(', '))}</p>` : ''}
+    ${entries.length ? `<form id="ingredientForm">
+      <label class="field">Einkaufsliste<select name="ingredientList">
+        ${shoppingLists.map(target => `<option value="${esc(target.id)}">${esc(target.name)}</option>`).join('')}
+      </select></label>
+      <p class="info">Wähle ab, was du schon daheim hast.</p>
+      <div class="ingredient-options">${choices}</div>
+      <button class="primary wide" type="submit">Auf die Einkaufsliste</button>
+    </form>` : '<p class="info">Hinterlege zuerst Zutaten bei deinen Gerichten.</p>'}`);
+  if (!entries.length) return;
+  $('#ingredientForm').onsubmit = event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const target = state.lists.find(entry => entry.id === form.elements.ingredientList.value && isShopping(entry));
+    if (!target) return alertToast('Diese Einkaufsliste ist nicht mehr verfügbar.');
+    const selected = [...form.querySelectorAll('input[name="ingredient"]:checked')]
+      .map(input => entries[Number(input.value)]);
+    if (!selected.length) return alertToast('Wähle mindestens eine Zutat.');
+    const count = addParsedItems(selected, target);
+    closeModal();
+    alertToast(count ? `${count} Zutaten zu „${target.name}“ hinzugefügt` : 'Diese Zutaten stehen bereits auf der Liste.');
+  };
+}
+
 function weekPlanHTML(list) {
   const draft = planDrafts.get(list.id);
   const plan = draft ?? list.weekPlan;
@@ -106,12 +176,14 @@ function weekPlanHTML(list) {
       ${draft ? '<button type="button" class="primary" data-card-action="save-week">Speichern</button>' : ''}
       <button type="button" class="secondary" data-card-action="copy-week">Kopieren</button>
       <button type="button" class="secondary" data-card-action="share-week">Teilen</button>
+      <button type="button" class="secondary wide" data-card-action="ingredients-week">Zutaten auf die Einkaufsliste</button>
     </div>
   </section>`;
 }
 
 async function weekAction(list, action, button) {
   const plan = planDrafts.get(list.id) ?? list.weekPlan;
+  if (action === 'ingredients-week') return ingredientPreview(list, plan);
   if (action === 'new-week') {
     if (!availableDishes(list).length) return alertToast('Füge zuerst ein Gericht hinzu.');
     const proposal = newWeekPlan(list);
@@ -246,7 +318,7 @@ function newListModal(){
  storeSelect.onchange=()=>{customLabel.classList.toggle('hidden',storeSelect.value!=='__custom__');if(!customLabel.classList.contains('hidden'))customLabel.querySelector('input').focus();};
  $('#listForm').onsubmit=e=>{e.preventDefault();const store=typeSelect.value==='dishes'?DISH_STORE:typeSelect.value==='todo'?TODO_STORE:(storeSelect.value==='__custom__'?formVal('customStore'):storeSelect.value);if(!store||(typeSelect.value==='shopping'&&[TODO_STORE,DISH_STORE].includes(store))){alertToast('Bitte ein anderes Geschäft eingeben');return;}createList(formVal('name'),store,e.currentTarget.elements.listColor.value);closeModal();alertToast('Liste erstellt');};
 }
-function itemModal(id){const x=state.items.find(z=>z.id===id);if(!x)return;const list=state.lists.find(list=>list.id===x.listId), todo=isTodo(list), dish=isDishes(list);const otherListOptions=state.lists.map(l=>`<option value="${esc(l.id)}" ${l.id===x.listId?'selected':''}>${esc(l.name)} (${isDishes(l)?'Gerichte':isTodo(l)?'To-do':esc(l.store)})</option>`).join('');openModal(dish?'Gericht bearbeiten':todo?'Aufgabe bearbeiten':'Artikel bearbeiten',`<form id="itemForm"><label class="field">Artikel<input name="name" value="${esc(itemInput(x))}" maxlength="243" placeholder="z. B. 500g Tofu" required></label><label class="field">Liste<select name="targetList">${otherListOptions}</select></label><div class="modal-actions"><button class="primary" type="submit">Speichern</button>${todo||dish?'':'<button class="secondary" id="itemCategoryBtn" type="button">Kategorie ändern</button>'}<button class="danger" id="deleteItemBtn" type="button">Löschen</button></div></form>`);$('#itemForm').onsubmit=e=>{e.preventDefault();const value=formVal('name');if(value!==itemInput(x)){const parsed=todo||dish?{text:value,amount:''}:splitQuantity(value);editItem(id,parsed.text,parsed.amount);}const dest=formVal('targetList');if(dest && dest!==x.listId)moveItem(id,dest);closeModal();};if(!todo&&!dish)$('#itemCategoryBtn').onclick=()=>categoryModal(id);$('#deleteItemBtn').onclick=()=>{if(confirm('Artikel löschen?')){deleteItem(id);closeModal();}};}
+function itemModal(id){const x=state.items.find(z=>z.id===id);if(!x)return;const list=state.lists.find(list=>list.id===x.listId), todo=isTodo(list), dish=isDishes(list);const otherListOptions=state.lists.map(l=>`<option value="${esc(l.id)}" ${l.id===x.listId?'selected':''}>${esc(l.name)} (${isDishes(l)?'Gerichte':isTodo(l)?'To-do':esc(l.store)})</option>`).join('');openModal(dish?'Gericht bearbeiten':todo?'Aufgabe bearbeiten':'Artikel bearbeiten',`<form id="itemForm"><label class="field">${dish?'Gericht':'Artikel'}<input name="name" value="${esc(itemInput(x))}" maxlength="243" placeholder="${dish?'z. B. Paprikahendl':'z. B. 500g Tofu'}" required></label>${dish?`<label class="field">Zutaten · eine pro Zeile<textarea name="ingredients" rows="6" maxlength="12000" placeholder="500 g Hendl&#10;2 Paprika&#10;1 Zwiebel">${esc(x.ingredients || '')}</textarea></label>`:''}<label class="field">Liste<select name="targetList">${otherListOptions}</select></label><div class="modal-actions"><button class="primary" type="submit">Speichern</button>${todo||dish?'':'<button class="secondary" id="itemCategoryBtn" type="button">Kategorie ändern</button>'}<button class="danger" id="deleteItemBtn" type="button">Löschen</button></div></form>`);$('#itemForm').onsubmit=e=>{e.preventDefault();const value=formVal('name');if(!value)return;if(dish){const current=state.items.find(item=>item.id===id);if(!current){closeModal();return;}current.ingredients=formVal('ingredients').slice(0,12000);const oldName=current.text;const newName=value.slice(0,140);if(oldName!==newName&&!listItems(list.id).some(item=>item.id!==id&&dishKey(item.text)===dishKey(oldName))){for(const plan of [list.weekPlan,planDrafts.get(list.id)]){if(!plan)continue;const index=plan.findIndex(name=>dishKey(name)===dishKey(oldName));if(index>=0)plan[index]=plan.some((name,i)=>i!==index&&dishKey(name)===dishKey(newName))?'':newName;}}save();}if(value!==itemInput(x)){const parsed=todo||dish?{text:value,amount:''}:splitQuantity(value);editItem(id,parsed.text,parsed.amount);}const dest=formVal('targetList');if(dest && dest!==x.listId)moveItem(id,dest);closeModal();};if(!todo&&!dish)$('#itemCategoryBtn').onclick=()=>categoryModal(id);$('#deleteItemBtn').onclick=()=>{if(confirm('Artikel löschen?')){deleteItem(id);closeModal();}};}
 function listModal(){let l=active();openModal('Liste verwalten',`
 <div class="list-menu-grid">
   <button id="syncListBtn" class="menu-action" type="button"><span>♧</span> Liste mit Partnerin verbinden <small>QR-Code / Synchronisierung</small></button>
@@ -468,7 +540,8 @@ function dictationModal(listId) {
 }
 
 function splitQuantity(raw){const s=String(raw||'').trim();const note=s.match(/^(.+?)\s+—\s+(.+)$/);if(note)return {text:note[1].trim(),amount:note[2].trim()};const prefix=s.match(/^(\d+(?:[,.]\d+)?\s*(?:kg|g|l|liter|ml|stk\.?|st\.?|packungen?|stück|x|becher|flaschen?|dosen?|bund|päckchen|el|tl))\s+(.+)$/i);if(prefix)return {amount:prefix[1].trim(),text:prefix[2].trim()};const simple=s.match(/^(\d+(?:[,.]\d+)?)\s*[x×]\s+(.+)$/i);if(simple)return {amount:simple[1]+' ×',text:simple[2].trim()};const numeric=s.match(/^(\d+(?:[,.]\d+)?)\s+(.+)$/);if(numeric)return {amount:numeric[1],text:numeric[2].trim()};return {amount:'',text:s};}
-function addMultiple(raw,listId){const lines=cleanLines(raw),l=state.lists.find(x=>x.id===listId)||active();let added=0,skipped=0;const seen=new Set(listItems(l.id).filter(i=>!i.done).map(i=>`${i.text.toLocaleLowerCase('de').trim()}|${i.amount.toLocaleLowerCase('de').trim()}`));for(const line of lines){const parsed=!isShopping(l)?{text:line,amount:''}:splitQuantity(line);const key=`${parsed.text.toLocaleLowerCase('de').trim()}|${parsed.amount.toLocaleLowerCase('de').trim()}`;if(seen.has(key)){skipped++;continue;}seen.add(key);const item={id:uid(),listId:l.id,text:parsed.text.slice(0,140),amount:parsed.amount.slice(0,100),done:false,updatedAt:Date.now()};state.items.push(item);syncItem(l,item,'set');added++;}persist();if(skipped)alertToast(`${skipped} doppelte Artikel übersprungen`);return added;}
+function addMultiple(raw,listId){const lines=cleanLines(raw),l=state.lists.find(x=>x.id===listId)||active();const entries=lines.map(line=>isShopping(l)?splitQuantity(line):{text:line,amount:''});return addParsedItems(entries,l);}
+function addParsedItems(entries,l){let added=0,skipped=0;const seen=new Set(listItems(l.id).filter(i=>!i.done).map(i=>`${i.text.toLocaleLowerCase('de').trim()}|${i.amount.toLocaleLowerCase('de').trim()}`));for(const parsed of entries){const key=`${parsed.text.toLocaleLowerCase('de').trim()}|${parsed.amount.toLocaleLowerCase('de').trim()}`;if(seen.has(key)){skipped++;continue;}seen.add(key);const item={id:uid(),listId:l.id,text:parsed.text.slice(0,140),amount:parsed.amount.slice(0,100),done:false,updatedAt:Date.now()};state.items.push(item);syncItem(l,item,'set');added++;}persist();if(skipped)alertToast(`${skipped} doppelte Artikel übersprungen`);return added;}
 function textFor(list,openOnly=true){const items=listItems(list.id).filter(x=>!openOnly||!x.done);return items.map(x=>`${x.amount?x.amount+' ':''}${x.text}`).join('\n');}
 async function copyCurrent(){let t=textFor(active());if(!t){alertToast('Keine offenen Artikel zum Kopieren');return;}const full=`Finde bitte möglichst günstige passende Produkte für diese Einkaufsliste und füge sie meinem Warenkorb hinzu. Vergleiche den Grundpreis, beachte Mengen und frage bei Unklarheiten nach:\n\n${t}`;try{await clipboardText(full);alertToast('Für Gurkerl / Maia kopiert');}catch(e){openModal('Liste zum Kopieren',`<textarea class="editarea" readonly id="copyArea">${esc(full)}</textarea><p class="info">Text markieren und kopieren.</p>`);$('#copyArea').select();}}
 function downloadFile(filename,text,type){if(window.AndroidEinkauf?.saveFile){window.AndroidEinkauf.saveFile(filename,text,type);return;}const b=new Blob([text],{type});let url=URL.createObjectURL(b),a=document.createElement('a');a.href=url;a.download=filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);}
@@ -524,7 +597,7 @@ function settingsModal(){openModal('Einstellungen & Backup',`<label class="field
    catch { alertToast('Farbschema konnte nicht dauerhaft gespeichert werden'); }
  };
  $('#googleLogin').onclick=()=>{if(!window.firebase){alertToast('Verbindung wird geladen. Bitte kurz warten.');return;}googleLogin();};$('#googleLogout').onclick=async()=>{if(window.firebase)await firebase.auth().signOut();settingsModal();};$('#backupSave').onclick=backup;$('#backupLoad').onclick=()=>$('#backupFile').click();$('#openPair').onclick=pairModal;}
-async function restore(file){if(!file)return;try{let j=JSON.parse(await file.text());if(j.format!=='einkauf-v1'||!Array.isArray(j.data?.lists)||!Array.isArray(j.data?.items)||j.data.lists.length>100||j.data.items.length>10000)throw Error('Unbekanntes Dateiformat');const ids=new Set(j.data.lists.map(x=>x.id));let lists=j.data.lists.filter(x=>typeof x.id==='string'&&typeof x.name==='string').map(x=>({id:x.id.slice(0,80),name:x.name.slice(0,70),store:String(x.store||'Alle Geschäfte').slice(0,60),sharedId:null,weekPlan:isDishes(x)&&Array.isArray(x.weekPlan)?WEEKDAYS.map((_,i)=>typeof x.weekPlan[i]==='string'?x.weekPlan[i].slice(0,140):''):undefined,color:LIST_COLORS.has(x.color)?x.color:undefined}));let items=j.data.items.filter(x=>ids.has(x.listId)&&typeof x.text==='string').map(x=>({id:String(x.id).slice(0,80),listId:String(x.listId).slice(0,80),text:x.text.slice(0,140),amount:String(x.amount||'').slice(0,100),done:!!x.done,department:departments.some(([label])=>label===x.department)?x.department:undefined,updatedAt:Number(x.updatedAt)||Date.now()}));if(!lists.length)throw Error('Keine Listen');if(!confirm('Aktuelle lokale Listen durch dieses Backup ersetzen?'))return;listeners.forEach(off=>off());listeners.clear();planDrafts.clear();state={...initial(),lists,items,activeId:lists[0].id};persist();closeModal();alertToast('Backup wiederhergestellt');}catch(e){alertToast('Backup ungültig: '+e.message);}}
+async function restore(file){if(!file)return;try{let j=JSON.parse(await file.text());if(j.format!=='einkauf-v1'||!Array.isArray(j.data?.lists)||!Array.isArray(j.data?.items)||j.data.lists.length>100||j.data.items.length>10000)throw Error('Unbekanntes Dateiformat');const ids=new Set(j.data.lists.map(x=>x.id));let lists=j.data.lists.filter(x=>typeof x.id==='string'&&typeof x.name==='string').map(x=>({id:x.id.slice(0,80),name:x.name.slice(0,70),store:String(x.store||'Alle Geschäfte').slice(0,60),sharedId:null,weekPlan:isDishes(x)&&Array.isArray(x.weekPlan)?WEEKDAYS.map((_,i)=>typeof x.weekPlan[i]==='string'?x.weekPlan[i].slice(0,140):''):undefined,color:LIST_COLORS.has(x.color)?x.color:undefined}));let items=j.data.items.filter(x=>ids.has(x.listId)&&typeof x.text==='string').map(x=>({id:String(x.id).slice(0,80),listId:String(x.listId).slice(0,80),text:x.text.slice(0,140),amount:String(x.amount||'').slice(0,100),done:!!x.done,ingredients:typeof x.ingredients==='string'?x.ingredients.slice(0,12000):undefined,department:departments.some(([label])=>label===x.department)?x.department:undefined,updatedAt:Number(x.updatedAt)||Date.now()}));if(!lists.length)throw Error('Keine Listen');if(!confirm('Aktuelle lokale Listen durch dieses Backup ersetzen?'))return;listeners.forEach(off=>off());listeners.clear();planDrafts.clear();state={...initial(),lists,items,activeId:lists[0].id};persist();closeModal();alertToast('Backup wiederhergestellt');}catch(e){alertToast('Backup ungültig: '+e.message);}}
 // Firebase cloud. Auth is per-device, users are authenticated anonymously.
 let authWatching=false;
 async function applyUser(user){for(const off of listeners.values())off();listeners.clear();cloudUser=null;firebaseReady=false;cloudError='';
@@ -548,7 +621,7 @@ async function flushPending(){if(!cloudUser||!state.pending.length)return;let ta
 function stopListen(id){if(id&&listeners.has(id)){listeners.get(id)();listeners.delete(id);}}
 function watchList(l){if(!cloud||!l.sharedId||listeners.has(l.sharedId))return;let sid=l.sharedId;
  const off1=sharedRef(sid).onSnapshot(s=>{if(!s.exists){return;}const cur=state.lists.find(z=>z.sharedId===sid);if(!cur)return;if(s.data().name&&cur.name!==s.data().name){cur.name=s.data().name;cur.store=s.data().store||'Alle Geschäfte';persist();}},err=>console.warn('Liste abonnieren',err.message));
- const off2=sharedRef(sid).collection('items').onSnapshot(s=>{const cur=state.lists.find(z=>z.sharedId===sid);if(!cur)return;for(const change of s.docChanges()){let idx=state.items.findIndex(i=>i.listId===cur.id&&i.id===change.doc.id);if(change.type==='removed'){if(idx!==-1)state.items.splice(idx,1);continue;}const d=change.doc.data(),item={id:change.doc.id,listId:cur.id,text:String(d.text||'').slice(0,140),amount:String(d.amount||''),done:!!d.done,updatedAt:d.updatedAt||Date.now()};if(idx===-1)state.items.push(item);else state.items[idx]={...item,department:state.items[idx].department};}persist();},err=>{console.error(err);alertToast('Cloud-Zugriff fehlgeschlagen');});
+ const off2=sharedRef(sid).collection('items').onSnapshot(s=>{const cur=state.lists.find(z=>z.sharedId===sid);if(!cur)return;for(const change of s.docChanges()){let idx=state.items.findIndex(i=>i.listId===cur.id&&i.id===change.doc.id);if(change.type==='removed'){if(idx!==-1)state.items.splice(idx,1);continue;}const d=change.doc.data(),item={id:change.doc.id,listId:cur.id,text:String(d.text||'').slice(0,140),amount:String(d.amount||''),done:!!d.done,updatedAt:d.updatedAt||Date.now()};if(idx===-1)state.items.push(item);else state.items[idx]={...item,department:state.items[idx].department,ingredients:state.items[idx].ingredients};}persist();},err=>{console.error(err);alertToast('Cloud-Zugriff fehlgeschlagen');});
  listeners.set(sid,()=>{off1();off2();});flushPending();}
 async function startShare(){if(!needCloud())return;const l=active();if(l.sharedId&&l.ownerUid&&l.ownerUid!==cloudUser.uid){alertToast('Nur die erstellende Person kann neue Einladungen versenden');return;}if(l.sharedId)return createInvite(l);
  try{let sid=uid();let ref=sharedRef(sid),batch=cloud.batch();await ref.set({name:l.name,store:l.store,ownerUid:cloudUser.uid,createdAt:firebase.firestore.FieldValue.serverTimestamp()});for(const item of listItems(l.id))batch.set(ref.collection('items').doc(item.id),{text:item.text,amount:item.amount,done:item.done,updatedAt:item.updatedAt});await batch.commit();l.sharedId=sid;l.ownerUid=cloudUser.uid;persist();watchList(l);await createInvite(l);}catch(e){console.error(e);alertToast('Teilen nicht möglich: '+e.message);}}
@@ -616,7 +689,7 @@ listCards.addEventListener('click', event => {
   }
 }, true);
 $('#closeModal').onclick=closeModal;$('#overlay').addEventListener('click',e=>{if(e.target===$('#overlay'))closeModal();});document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#overlay').hidden)closeModal();});
-$('#listCards').addEventListener('click',e=>{const card=e.target.closest('.list-card');if(!card)return;state.activeId=card.dataset.list;const item=e.target.closest('[data-act]');if(item){if(item.dataset.act==='toggle')toggleItem(item.dataset.id);if(item.dataset.act==='edit')itemModal(item.dataset.id);return;}const action=e.target.closest('[data-card-action]')?.dataset.cardAction;if(['new-week','reroll-day','save-week','copy-week','share-week'].includes(action))return weekAction(active(),action,e.target.closest('[data-card-action]'));if(action==='menu')listModal();if(action==='scan')scanModal();if(action==='dictate')dictationModal(card.dataset.list);if(action==='share')pairModal();if(action==='recipe')recipeImportModal();if(action==='copy-gurkerl')copyCurrent();if(action==='export')exportModal();});
+$('#listCards').addEventListener('click',e=>{const card=e.target.closest('.list-card');if(!card)return;state.activeId=card.dataset.list;const item=e.target.closest('[data-act]');if(item){if(item.dataset.act==='toggle')toggleItem(item.dataset.id);if(item.dataset.act==='edit')itemModal(item.dataset.id);return;}const action=e.target.closest('[data-card-action]')?.dataset.cardAction;if(['new-week','reroll-day','save-week','copy-week','share-week','ingredients-week'].includes(action))return weekAction(active(),action,e.target.closest('[data-card-action]'));if(action==='menu')listModal();if(action==='scan')scanModal();if(action==='dictate')dictationModal(card.dataset.list);if(action==='share')pairModal();if(action==='recipe')recipeImportModal();if(action==='copy-gurkerl')copyCurrent();if(action==='export')exportModal();});
 $('#listCards').addEventListener('submit',e=>{if(!e.target.matches('.card-add'))return;e.preventDefault();const id=e.target.closest('.list-card').dataset.list;state.activeId=id;const input=e.target.elements.article;const v=input.value;if(!v.trim())return;input.value='';addItem(v);const fresh=[...$('#listCards').querySelectorAll('.list-card')].find(c=>c.dataset.list===id);fresh.querySelector('input').focus();});
 $('#newListBtn').onclick=newListModal;$('#settingsBtn').onclick=settingsModal;
 $('#scanFile').onchange=e=>{handleImage(e.target.files?.[0]);e.target.value='';};$('#backupFile').onchange=e=>{restore(e.target.files?.[0]);e.target.value='';};
