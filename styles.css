@@ -435,3 +435,5 @@ body {
   accent-color: var(--forest);
 }
 .ingredient-option span { overflow-wrap: anywhere; }
+
+.clear-done { margin-top: 10px; }
