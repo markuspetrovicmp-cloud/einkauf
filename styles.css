@@ -403,3 +403,18 @@ body {
   overflow-wrap: anywhere;
 }
 .week-plan li button { min-width: 44px; min-height: 44px; }
+.week-plan-label {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.week-plan-day {
+  font-size: .78rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+.week-plan-dish {
+  font-size: 1.05rem;
+  font-weight: 750;
+}
+.week-plan li button { flex-shrink: 0; }

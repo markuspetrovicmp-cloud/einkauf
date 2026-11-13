@@ -90,7 +90,10 @@ function weekPlanHTML(list) {
   const plan = draft ?? list.weekPlan;
   if (!plan) return '<button type="button" class="secondary wide" data-card-action="new-week">Wochenplan erstellen</button>';
   const rows = WEEKDAYS.map((day, index) => `<li>
-    <span><strong>${day}</strong><br>${esc(plan[index] || '—')}</span>
+    <div class="week-plan-label">
+      <span class="week-plan-day">${day}</span>
+      <strong class="week-plan-dish">${esc(plan[index] || '—')}</strong>
+    </div>
     <button type="button" data-card-action="reroll-day" data-day="${index}"
       aria-label="${day} neu würfeln" title="${day} neu würfeln"
       ${availableDishes(list, plan).length ? '' : 'disabled'}>⟳</button>
