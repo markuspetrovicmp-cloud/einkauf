@@ -769,9 +769,9 @@ function showListTrash(summary) {
   overlay.onpointerup = event => {
     if (swipeStart?.id !== event.pointerId) return;
     const dx = Math.abs(event.clientX - swipeStart.x);
-    const dy = event.clientY - swipeStart.y;
+    const upwardDistance = swipeStart.y - event.clientY;
     swipeStart = null;
-    if (dy < 48 || dy <= dx) return;
+    if (upwardDistance < 48 || upwardDistance <= dx) return;
     dismissing = true;
     requestAnimationFrame(() => {
       if (trashPreview?.overlay === overlay) hideListTrash();
