@@ -680,8 +680,7 @@ listCards.addEventListener('pointerdown', event => {
     if (!button.isConnected || !$('#overlay').hidden) return;
     heldItemButton = button;
     if (summary) {
-      hideListTrash();
-      summary.querySelector('.list-trash').hidden = false;
+      showListTrash(summary);
     } else {
       categoryModal(button.dataset.id);
     }
@@ -711,23 +710,76 @@ listCards.addEventListener('click', event => {
     event.stopImmediatePropagation();
   }
 }, true);
+let trashPreview = null;
+
 function hideListTrash() {
-  const trash = listCards.querySelector('.list-trash:not([hidden])');
-  if (trash) trash.hidden = true;
+  if (!trashPreview) return;
+  const {overlay, summary} = trashPreview;
+  trashPreview = null;
+  overlay.remove();
+  if (summary.isConnected) summary.focus({preventScroll: true});
 }
-document.addEventListener('click', event => {
-  if (!event.target.closest('.list-trash')) hideListTrash();
-});
+
+function showListTrash(summary) {
+  hideListTrash();
+  const card = summary.closest('.list-card');
+  const rect = summary.getBoundingClientRect();
+  const overlay = document.createElement('div');
+  overlay.className = 'list-trash-overlay';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-label', 'Liste entfernen');
+  const preview = document.createElement('div');
+  preview.className = 'list-trash-preview';
+  const tile = document.createElement('div');
+  tile.className = 'list-trash-tile';
+  tile.style.backgroundColor = getComputedStyle(card).getPropertyValue('--tile').trim();
+  tile.style.color = getComputedStyle(summary).color;
+  tile.append(summary.querySelector('.list-name').cloneNode(true),
+    summary.querySelector('.open-count').cloneNode(true));
+  const button = summary.querySelector('.list-trash').cloneNode(true);
+  button.hidden = false;
+  preview.append(tile, button);
+  overlay.append(preview);
+  document.body.append(overlay);
+  trashPreview = {overlay, summary};
+  const target = preview.getBoundingClientRect();
+  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const x = rect.left + (rect.width - target.width) / 2 - target.left;
+    const y = rect.top + (rect.height - target.height) / 2 - target.top;
+    preview.animate([
+      {transform: 'translate(' + x + 'px, ' + y + 'px) scale(' +
+        rect.width / target.width + ', ' + rect.height / target.height + ')'},
+      {transform: 'none'}
+    ], {duration: 260, easing: 'cubic-bezier(.2,.75,.28,1)'});
+  }
+  button.focus({preventScroll: true});
+  button.onclick = () => {
+    const list = state.lists.find(entry => entry.id === card.dataset.list);
+    hideListTrash();
+    if (list) removeList(list);
+  };
+  overlay.onclick = event => {
+    if (event.target === overlay) hideListTrash();
+  };
+  overlay.onkeydown = event => {
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      button.focus();
+    }
+  };
+}
+
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape') hideListTrash();
 });
 $('#closeModal').onclick=closeModal;$('#overlay').addEventListener('click',e=>{if(e.target===$('#overlay'))closeModal();});document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#overlay').hidden)closeModal();});
-$('#listCards').addEventListener('click',e=>{const card=e.target.closest('.list-card');if(!card)return;state.activeId=card.dataset.list;const item=e.target.closest('[data-act]');if(item){if(item.dataset.act==='toggle')toggleItem(item.dataset.id);if(item.dataset.act==='edit')itemModal(item.dataset.id);return;}const action=e.target.closest('[data-card-action]')?.dataset.cardAction;if(['new-week','reroll-day','save-week','copy-week','share-week','ingredients-week'].includes(action))return weekAction(active(),action,e.target.closest('[data-card-action]'));if(action==='delete-list'){e.preventDefault();hideListTrash();return removeList(active());}if(action==='clear-done')return clearDone(active());if(action==='menu')listModal();if(action==='scan')scanModal();if(action==='dictate')dictationModal(card.dataset.list);if(action==='share')pairModal();if(action==='recipe')recipeImportModal();if(action==='copy-gurkerl')copyCurrent();if(action==='export')exportModal();});
+$('#listCards').addEventListener('click',e=>{const card=e.target.closest('.list-card');if(!card)return;state.activeId=card.dataset.list;const item=e.target.closest('[data-act]');if(item){if(item.dataset.act==='toggle')toggleItem(item.dataset.id);if(item.dataset.act==='edit')itemModal(item.dataset.id);return;}const action=e.target.closest('[data-card-action]')?.dataset.cardAction;if(['new-week','reroll-day','save-week','copy-week','share-week','ingredients-week'].includes(action))return weekAction(active(),action,e.target.closest('[data-card-action]'));if(action==='clear-done')return clearDone(active());if(action==='menu')listModal();if(action==='scan')scanModal();if(action==='dictate')dictationModal(card.dataset.list);if(action==='share')pairModal();if(action==='recipe')recipeImportModal();if(action==='copy-gurkerl')copyCurrent();if(action==='export')exportModal();});
 $('#listCards').addEventListener('submit',e=>{if(!e.target.matches('.card-add'))return;e.preventDefault();const id=e.target.closest('.list-card').dataset.list;state.activeId=id;const input=e.target.elements.article;const v=input.value;if(!v.trim())return;input.value='';addItem(v);const fresh=[...$('#listCards').querySelectorAll('.list-card')].find(c=>c.dataset.list===id);fresh.querySelector('input').focus();});
 $('#newListBtn').onclick=newListModal;$('#settingsBtn').onclick=settingsModal;
 $('#scanFile').onchange=e=>{handleImage(e.target.files?.[0]);e.target.value='';};$('#backupFile').onchange=e=>{restore(e.target.files?.[0]);e.target.value='';};
 if(window.AndroidEinkauf && 'serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.unregister())).catch(()=>{});}else if('serviceWorker' in navigator && location.protocol.startsWith('http')){navigator.serviceWorker.register('./sw.js').catch(console.warn);}
 window.addEventListener('online',()=>{if(firebaseReady){flushPending();render();}else if(cloud&&window.firebase&&firebase.auth().currentUser)applyUser(firebase.auth().currentUser);else if(!firebaseBusy&&window.WOHIN_FIREBASE_CONFIG)initFirebase();});window.addEventListener('offline',render);
-window.einkaufAndroidBack=()=>{if(!$('#overlay').hidden){closeModal();return true;}return false;};
+window.einkaufAndroidBack=()=>{if(trashPreview){hideListTrash();return true;}if(!$('#overlay').hidden){closeModal();return true;}return false;};
 render();initFirebase();
 })();
