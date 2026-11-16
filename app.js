@@ -220,7 +220,7 @@ async function weekAction(list, action, button) {
 
 
 function render(){let a=active();if(!a){state=initial();a=active();save();}
- const host=$('#listCards');const typed={};host.querySelectorAll('.card-add input').forEach(i=>{if(i.value)typed[i.closest('.list-card').dataset.list]=i.value;});const focusList=document.activeElement?.closest?.('.card-add')?.closest('.list-card')?.dataset.list;host.innerHTML=state.lists.map((l,index)=>{const all=listItems(l.id),todo=all.filter(x=>!x.done),done=all.filter(x=>x.done);return `<details name="einkauf-lists" class="list-card" data-kind="${isDishes(l)?'dishes':isTodo(l)?'todo':'shopping'}" data-color="${listColor(l,index)}" data-list="${esc(l.id)}" ${openedLists.has(l.id)?'open':''}><summary><span class="list-name">${esc(l.name)}</span><span class="open-count">${isDishes(l)?all.length+' Gerichte':todo.length+' offen'}</span><span class="card-chevron" aria-hidden="true"></span></summary><div class="card-top"><div class="card-meta"><span>${esc(l.sharedId?(cloudUser?(navigator.onLine?'Gemeinsam · verbunden':'Gemeinsam · offline'):'Gemeinsam · Anmeldung nötig'):'Privat · auf diesem Gerät')}</span><button data-card-action="menu" aria-label="Liste verwalten">⋯</button></div><div class="card-actions" ${!isShopping(l)?'hidden':''}><button data-card-action="scan">Zettel importieren</button><button class="gurkerl-copy" data-card-action="copy-gurkerl" ${todo.length ? '' : 'disabled'}>Für Gurkerl kopieren</button></div></div><div class="card-body"><form class="card-add"><input name="article" aria-label="${isDishes(l)?'Gericht':isTodo(l)?'Aufgabe':'Artikel'} für ${esc(l.name)}" placeholder="${isDishes(l)?'Gericht hinzufügen':isTodo(l)?'Aufgabe hinzufügen':'z. B. 500g Tofu'}" maxlength="140" autocomplete="off"><button class="dictation-mic" data-card-action="dictate" aria-label="Eintrag diktieren" type="button"><span aria-hidden="true">🎙</span></button><button aria-label="Eintrag hinzufügen" type="submit">+</button></form><div class="items">${isShopping(l)?departmentHTML(todo):all.map(item=>itemHTML(item,isDishes(l))).join('')}</div>${(isShopping(l)?!todo.length:!all.length)?`<p class="empty">${done.length?'Alles erledigt.':'Deine Liste ist noch leer.'}</p>`:''}${isShopping(l)&&done.length?`<details class="done-accordion" ${shownDone.has(l.id)?'open':''}><summary>Erledigt · ${done.length}<span class="card-chevron" aria-hidden="true"></span></summary><div class="items done-items">${done.map(item=>itemHTML(item)).join('')}</div><button type="button" class="danger wide clear-done" data-card-action="clear-done">Erledigte löschen</button></details>`:''}${isDishes(l)?weekPlanHTML(l):''}<div class="card-secondary" ${isDishes(l)?'hidden':''}><button data-card-action="recipe">Aus Rezept</button><button data-card-action="share">Teilen</button><button data-card-action="export">Weitere Exporte</button></div></div></details>`;}).join('');
+ const host=$('#listCards');const typed={};host.querySelectorAll('.card-add input').forEach(i=>{if(i.value)typed[i.closest('.list-card').dataset.list]=i.value;});const focusList=document.activeElement?.closest?.('.card-add')?.closest('.list-card')?.dataset.list;host.innerHTML=state.lists.map((l,index)=>{const all=listItems(l.id),todo=all.filter(x=>!x.done),done=all.filter(x=>x.done);return `<details name="einkauf-lists" class="list-card" data-kind="${isDishes(l)?'dishes':isTodo(l)?'todo':'shopping'}" data-color="${listColor(l,index)}" data-list="${esc(l.id)}" ${openedLists.has(l.id)?'open':''}><summary><span class="list-name">${esc(l.name)}</span><span class="open-count">${isDishes(l)?all.length+' Gerichte':todo.length+' offen'}</span><span class="card-chevron" aria-hidden="true"></span><button type="button" class="list-trash" data-card-action="delete-list" aria-label="Liste entfernen" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 10v7m4-7v7"/></svg></button></summary><div class="card-top"><div class="card-meta"><span>${esc(l.sharedId?(cloudUser?(navigator.onLine?'Gemeinsam · verbunden':'Gemeinsam · offline'):'Gemeinsam · Anmeldung nötig'):'Privat · auf diesem Gerät')}</span><button data-card-action="menu" aria-label="Liste verwalten">⋯</button></div><div class="card-actions" ${!isShopping(l)?'hidden':''}><button data-card-action="scan">Zettel importieren</button><button class="gurkerl-copy" data-card-action="copy-gurkerl" ${todo.length ? '' : 'disabled'}>Für Gurkerl kopieren</button></div></div><div class="card-body"><form class="card-add"><input name="article" aria-label="${isDishes(l)?'Gericht':isTodo(l)?'Aufgabe':'Artikel'} für ${esc(l.name)}" placeholder="${isDishes(l)?'Gericht hinzufügen':isTodo(l)?'Aufgabe hinzufügen':'z. B. 500g Tofu'}" maxlength="140" autocomplete="off"><button class="dictation-mic" data-card-action="dictate" aria-label="Eintrag diktieren" type="button"><span aria-hidden="true">🎙</span></button><button aria-label="Eintrag hinzufügen" type="submit">+</button></form><div class="items">${isShopping(l)?departmentHTML(todo):all.map(item=>itemHTML(item,isDishes(l))).join('')}</div>${(isShopping(l)?!todo.length:!all.length)?`<p class="empty">${done.length?'Alles erledigt.':'Deine Liste ist noch leer.'}</p>`:''}${isShopping(l)&&done.length?`<details class="done-accordion" ${shownDone.has(l.id)?'open':''}><summary>Erledigt · ${done.length}<span class="card-chevron" aria-hidden="true"></span></summary><div class="items done-items">${done.map(item=>itemHTML(item)).join('')}</div><button type="button" class="danger wide clear-done" data-card-action="clear-done">Erledigte löschen</button></details>`:''}${isDishes(l)?weekPlanHTML(l):''}<div class="card-secondary" ${isDishes(l)?'hidden':''}><button data-card-action="recipe">Aus Rezept</button><button data-card-action="share">Teilen</button><button data-card-action="export">Weitere Exporte</button></div></div></details>`;}).join('');
  host.querySelectorAll('.list-card').forEach(c=>{const v=typed[c.dataset.list];if(v!=null)c.querySelector('.card-add input').value=v;if(focusList&&c.dataset.list===focusList)c.querySelector('.card-add input').focus();});
  host.querySelectorAll('.list-card').forEach(el=>el.addEventListener('toggle',()=>{const id=el.dataset.list;if(el.open){if(!openedLists.has(id)){openedLists.clear();openedLists.add(id);state.activeId=id;save();window.scrollTo(0,0);}}else openedLists.delete(id);}));
  host.querySelectorAll('.done-accordion').forEach(el=>el.addEventListener('toggle',()=>{const id=el.closest('.list-card').dataset.list;el.open?shownDone.add(id):shownDone.delete(id);}));
@@ -335,7 +335,7 @@ function listModal(){let l=active();openModal('Liste verwalten',`
 <p class="info">Bei einer geteilten Liste sehen alle verbundenen Personen Änderungen an den Artikeln. Synchronisierung funktioniert erst nach der Firebase-Einrichtung.</p>`);
  $('#listEditForm').onsubmit=e=>{e.preventDefault();l.name=formVal('name').slice(0,70);if(isShopping(l))l.store=formVal('store').slice(0,60)||'Alle Geschäfte';l.color=e.currentTarget.elements.listColor.value;persist();syncMeta(l);closeModal();};
  $('#clearDoneBtn').onclick=()=>{if(clearDone(l))closeModal();};
- $('#deleteListBtn').onclick=()=>{if(state.lists.length===1){alertToast('Mindestens eine Liste behalten');return;}if(confirm('Liste wirklich von diesem Gerät entfernen?')){planDrafts.delete(l.id);stopListen(l.sharedId);state.lists=state.lists.filter(z=>z.id!==l.id);state.items=state.items.filter(z=>z.listId!==l.id);state.activeId=state.lists[0].id;persist();closeModal();}};
+ $('#deleteListBtn').onclick=()=>removeList(l);
  $('#cloneListBtn').onclick=cloneCurrentList;
  $('#clearListBtn').onclick=clearCurrentList;
  $('#copyEntriesBtn').onclick=()=>rememberEntries('copy');
@@ -353,6 +353,7 @@ function cloneCurrentList(){
  state.lists.push(target);state.items.push(...copied);state.activeId=target.id;
  persist();closeModal();alertToast('Private Kopie mit '+copied.length+' Artikeln erstellt');
 }
+function removeList(l){if(state.lists.length===1){alertToast('Mindestens eine Liste behalten');return;}if(confirm('Liste wirklich von diesem Gerät entfernen?')){planDrafts.delete(l.id);openedLists.delete(l.id);shownDone.delete(l.id);stopListen(l.sharedId);state.lists=state.lists.filter(z=>z.id!==l.id);state.items=state.items.filter(z=>z.listId!==l.id);state.activeId=state.lists[0].id;persist();closeModal();}}
 function clearDone(list) {
   const completed = listItems(list.id).filter(item => item.done);
   if (!completed.length) {
@@ -669,14 +670,21 @@ listCards.addEventListener('pointerdown', event => {
   if (!event.isPrimary || event.button !== 0) return;
   heldItemButton = null;
   cancelItemPress();
-  const button = event.target.closest('.item-main');
-  if (!button || !button.closest('[data-kind=shopping]')) return;
+  if (event.target.closest('.list-trash')) return;
+  const summary = event.target.closest('.list-card > summary');
+  const button = summary || event.target.closest('[data-kind=shopping] .item-main');
+  if (!button) return;
   const {pointerId, clientX, clientY} = event;
   const timer = setTimeout(() => {
     cancelItemPress();
     if (!button.isConnected || !$('#overlay').hidden) return;
     heldItemButton = button;
-    categoryModal(button.dataset.id);
+    if (summary) {
+      hideListTrash();
+      summary.querySelector('.list-trash').hidden = false;
+    } else {
+      categoryModal(button.dataset.id);
+    }
   }, 500);
   itemPress = {pointerId, clientX, clientY, timer};
 });
@@ -694,16 +702,27 @@ for (const type of ['pointerup', 'pointercancel']) {
 }
 window.addEventListener('blur', cancelItemPress);
 listCards.addEventListener('contextmenu', event => {
-  if (event.target.closest('.item-main') && (itemPress || heldItemButton)) event.preventDefault();
+  if (event.target.closest('.item-main, .list-card > summary') && (itemPress || heldItemButton)) event.preventDefault();
 });
 listCards.addEventListener('click', event => {
   if (heldItemButton && event.detail && heldItemButton.contains(event.target)) {
     heldItemButton = null;
+    event.preventDefault();
     event.stopImmediatePropagation();
   }
 }, true);
+function hideListTrash() {
+  const trash = listCards.querySelector('.list-trash:not([hidden])');
+  if (trash) trash.hidden = true;
+}
+document.addEventListener('click', event => {
+  if (!event.target.closest('.list-trash')) hideListTrash();
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') hideListTrash();
+});
 $('#closeModal').onclick=closeModal;$('#overlay').addEventListener('click',e=>{if(e.target===$('#overlay'))closeModal();});document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#overlay').hidden)closeModal();});
-$('#listCards').addEventListener('click',e=>{const card=e.target.closest('.list-card');if(!card)return;state.activeId=card.dataset.list;const item=e.target.closest('[data-act]');if(item){if(item.dataset.act==='toggle')toggleItem(item.dataset.id);if(item.dataset.act==='edit')itemModal(item.dataset.id);return;}const action=e.target.closest('[data-card-action]')?.dataset.cardAction;if(['new-week','reroll-day','save-week','copy-week','share-week','ingredients-week'].includes(action))return weekAction(active(),action,e.target.closest('[data-card-action]'));if(action==='clear-done')return clearDone(active());if(action==='menu')listModal();if(action==='scan')scanModal();if(action==='dictate')dictationModal(card.dataset.list);if(action==='share')pairModal();if(action==='recipe')recipeImportModal();if(action==='copy-gurkerl')copyCurrent();if(action==='export')exportModal();});
+$('#listCards').addEventListener('click',e=>{const card=e.target.closest('.list-card');if(!card)return;state.activeId=card.dataset.list;const item=e.target.closest('[data-act]');if(item){if(item.dataset.act==='toggle')toggleItem(item.dataset.id);if(item.dataset.act==='edit')itemModal(item.dataset.id);return;}const action=e.target.closest('[data-card-action]')?.dataset.cardAction;if(['new-week','reroll-day','save-week','copy-week','share-week','ingredients-week'].includes(action))return weekAction(active(),action,e.target.closest('[data-card-action]'));if(action==='delete-list'){e.preventDefault();hideListTrash();return removeList(active());}if(action==='clear-done')return clearDone(active());if(action==='menu')listModal();if(action==='scan')scanModal();if(action==='dictate')dictationModal(card.dataset.list);if(action==='share')pairModal();if(action==='recipe')recipeImportModal();if(action==='copy-gurkerl')copyCurrent();if(action==='export')exportModal();});
 $('#listCards').addEventListener('submit',e=>{if(!e.target.matches('.card-add'))return;e.preventDefault();const id=e.target.closest('.list-card').dataset.list;state.activeId=id;const input=e.target.elements.article;const v=input.value;if(!v.trim())return;input.value='';addItem(v);const fresh=[...$('#listCards').querySelectorAll('.list-card')].find(c=>c.dataset.list===id);fresh.querySelector('input').focus();});
 $('#newListBtn').onclick=newListModal;$('#settingsBtn').onclick=settingsModal;
 $('#scanFile').onchange=e=>{handleImage(e.target.files?.[0]);e.target.value='';};$('#backupFile').onchange=e=>{restore(e.target.files?.[0]);e.target.value='';};
