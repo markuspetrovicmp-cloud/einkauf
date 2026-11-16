@@ -437,3 +437,5 @@ body {
 .ingredient-option span { overflow-wrap: anywhere; }
 
 .clear-done { margin-top: 10px; }
+
+.card-actions[hidden] { display: none; }
