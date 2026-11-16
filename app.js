@@ -759,6 +759,27 @@ function showListTrash(summary) {
     hideListTrash();
     if (list) removeList(list);
   };
+  let swipeStart = null;
+  let dismissing = false;
+  overlay.onpointerdown = event => {
+    if (!event.isPrimary || event.button !== 0) return;
+    swipeStart = {id: event.pointerId, x: event.clientX, y: event.clientY};
+  };
+  overlay.onpointercancel = () => { swipeStart = null; };
+  overlay.onpointerup = event => {
+    if (swipeStart?.id !== event.pointerId) return;
+    const dx = Math.abs(event.clientX - swipeStart.x);
+    const dy = event.clientY - swipeStart.y;
+    swipeStart = null;
+    if (dy < 48 || dy <= dx) return;
+    dismissing = true;
+    requestAnimationFrame(() => {
+      if (trashPreview?.overlay === overlay) hideListTrash();
+    });
+  };
+  overlay.addEventListener('click', event => {
+    if (dismissing) event.stopImmediatePropagation();
+  }, true);
   overlay.onclick = event => {
     if (event.target === overlay) hideListTrash();
   };
