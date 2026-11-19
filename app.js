@@ -219,10 +219,39 @@ async function weekAction(list, action, button) {
 
 
 
-function render(){let a=active();if(!a){state=initial();a=active();save();}
- const host=$('#listCards');const typed={};host.querySelectorAll('.card-add input').forEach(i=>{if(i.value)typed[i.closest('.list-card').dataset.list]=i.value;});const focusList=document.activeElement?.closest?.('.card-add')?.closest('.list-card')?.dataset.list;host.innerHTML=state.lists.map((l,index)=>{const all=listItems(l.id),todo=all.filter(x=>!x.done),done=all.filter(x=>x.done);return `<details name="einkauf-lists" class="list-card" data-kind="${isDishes(l)?'dishes':isTodo(l)?'todo':'shopping'}" data-color="${listColor(l,index)}" data-list="${esc(l.id)}" ${openedLists.has(l.id)?'open':''}><summary><span class="list-name">${esc(l.name)}</span><span class="open-count">${isDishes(l)?all.length+' Gerichte':todo.length+' offen'}</span><span class="card-chevron" aria-hidden="true"></span><button type="button" class="list-trash" data-card-action="delete-list" aria-label="Liste entfernen" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 10v7m4-7v7"/></svg></button></summary><div class="card-top"><div class="card-meta"><span>${esc(l.sharedId?(cloudUser?(navigator.onLine?'Gemeinsam · verbunden':'Gemeinsam · offline'):'Gemeinsam · Anmeldung nötig'):'Privat · auf diesem Gerät')}</span><button data-card-action="menu" aria-label="Liste verwalten">⋯</button></div><div class="card-actions" ${!isShopping(l)?'hidden':''}><button data-card-action="scan">Zettel importieren</button><button class="gurkerl-copy" data-card-action="copy-gurkerl" ${todo.length ? '' : 'disabled'}>Für Gurkerl kopieren</button></div></div><div class="card-body"><form class="card-add"><input name="article" aria-label="${isDishes(l)?'Gericht':isTodo(l)?'Aufgabe':'Artikel'} für ${esc(l.name)}" placeholder="${isDishes(l)?'Gericht hinzufügen':isTodo(l)?'Aufgabe hinzufügen':'z. B. 500g Tofu'}" maxlength="140" autocomplete="off"><button class="dictation-mic" data-card-action="dictate" aria-label="Eintrag diktieren" type="button"><span aria-hidden="true">🎙</span></button><button aria-label="Eintrag hinzufügen" type="submit">+</button></form><div class="items">${isShopping(l)?departmentHTML(todo):all.map(item=>itemHTML(item,isDishes(l))).join('')}</div>${(isShopping(l)?!todo.length:!all.length)?`<p class="empty">${done.length?'Alles erledigt.':'Deine Liste ist noch leer.'}</p>`:''}${isShopping(l)&&done.length?`<details class="done-accordion" ${shownDone.has(l.id)?'open':''}><summary>Erledigt · ${done.length}<span class="card-chevron" aria-hidden="true"></span></summary><div class="items done-items">${done.map(item=>itemHTML(item)).join('')}</div><button type="button" class="danger wide clear-done" data-card-action="clear-done">Erledigte löschen</button></details>`:''}${isDishes(l)?weekPlanHTML(l):''}<div class="card-secondary" ${isDishes(l)?'hidden':''}><button data-card-action="recipe">Aus Rezept</button><button data-card-action="share">Teilen</button><button data-card-action="export">Weitere Exporte</button></div></div></details>`;}).join('');
+function overviewSize(count, width, height) {
+  const gap = 8;
+  let columns = 2;
+  let rows = Math.ceil(count / columns);
+  const rowSpace = () => (height - (rows - 1) * gap) / rows;
+  while (columns < 4 && count > columns && rowSpace() < 84) {
+    columns++;
+    rows = Math.ceil(count / columns);
+  }
+  const tileWidth = (width - (columns - 1) * gap) / columns;
+  return {columns, tileHeight: Math.max(44, Math.floor(Math.min(tileWidth, rowSpace())))};
+}
+
+function fitListOverview() {
+  const grid = $('#listCards');
+  const footer = grid.nextElementSibling;
+  const app = $('#app');
+  const appStyle = getComputedStyle(app);
+  const bottomSpace = (parseFloat(appStyle.marginBottom) || 0) +
+    (parseFloat(appStyle.paddingBottom) || 0);
+  const height = innerHeight - (grid.getBoundingClientRect().top + scrollY) -
+    (footer?.offsetHeight || 0) - bottomSpace - 2;
+  const {columns, tileHeight} = overviewSize(grid.children.length, grid.clientWidth, height);
+  grid.style.setProperty('--overview-columns', columns);
+  grid.style.setProperty('--overview-tile-height', tileHeight + 'px');
+  grid.classList.toggle('overview-compact', tileHeight < 100 || columns > 2);
+  grid.classList.toggle('overview-title-only', tileHeight < 66);
+}
+
+function render(){if(draggedItem)return;let a=active();if(!a){state=initial();a=active();save();}
+ const host=$('#listCards');const typed={};host.querySelectorAll('.card-add input').forEach(i=>{if(i.value)typed[i.closest('.list-card').dataset.list]=i.value;});const focusList=document.activeElement?.closest?.('.card-add')?.closest('.list-card')?.dataset.list;host.innerHTML=state.lists.map((l,index)=>{const all=listItems(l.id),todo=all.filter(x=>!x.done),done=all.filter(x=>x.done);return `<details name="einkauf-lists" class="list-card" data-kind="${isDishes(l)?'dishes':isTodo(l)?'todo':'shopping'}" data-color="${listColor(l,index)}" data-list="${esc(l.id)}" ${openedLists.has(l.id)?'open':''}><summary><span class="list-name">${esc(l.name)}</span><span class="open-count">${isDishes(l)?all.length+' Gerichte':todo.length+' offen'}</span><span class="card-chevron" aria-hidden="true"></span><button type="button" class="list-trash" data-card-action="delete-list" aria-label="Liste entfernen" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 10v7m4-7v7"/></svg></button></summary><div class="card-top"><div class="card-meta"><span>${esc(l.sharedId?(cloudUser?(navigator.onLine?'Gemeinsam · verbunden':'Gemeinsam · offline'):'Gemeinsam · Anmeldung nötig'):'Privat · auf diesem Gerät')}</span><button data-card-action="menu" aria-label="Liste verwalten">⋯</button></div><div class="card-actions" ${!isShopping(l)?'hidden':''}><button data-card-action="scan">Zettel importieren</button><button class="gurkerl-copy" data-card-action="copy-gurkerl" ${todo.length ? '' : 'disabled'}>Für Gurkerl kopieren</button></div></div><div class="card-body"><form class="card-add"><input name="article" aria-label="${isDishes(l)?'Gericht':isTodo(l)?'Aufgabe':'Artikel'} für ${esc(l.name)}" placeholder="${isDishes(l)?'Gericht hinzufügen':isTodo(l)?'Aufgabe hinzufügen':'z. B. 500g Tofu'}" maxlength="140" autocomplete="off"><button class="dictation-mic" data-card-action="dictate" aria-label="Eintrag diktieren" type="button"><span aria-hidden="true">🎙</span></button><button aria-label="Eintrag hinzufügen" type="submit">+</button></form><div class="items">${isShopping(l)?departmentHTML(todo):(isDishes(l)?all:todo).map(item=>itemHTML(item,isDishes(l))).join('')}</div>${(isDishes(l)?!all.length:!todo.length)?`<p class="empty">${done.length?'Alles erledigt.':'Deine Liste ist noch leer.'}</p>`:''}${!isDishes(l)&&done.length?`<details class="done-accordion" ${shownDone.has(l.id)?'open':''}><summary>Erledigt · ${done.length}<span class="card-chevron" aria-hidden="true"></span></summary><div class="items done-items">${done.map(item=>itemHTML(item)).join('')}</div><button type="button" class="danger wide clear-done" data-card-action="clear-done">Erledigte löschen</button></details>`:''}${isDishes(l)?weekPlanHTML(l):''}<div class="card-secondary" ${isDishes(l)?'hidden':''}><button data-card-action="recipe">Aus Rezept</button><button data-card-action="share">Teilen</button><button data-card-action="export">Weitere Exporte</button></div></div></details>`;}).join('');
  host.querySelectorAll('.list-card').forEach(c=>{const v=typed[c.dataset.list];if(v!=null)c.querySelector('.card-add input').value=v;if(focusList&&c.dataset.list===focusList)c.querySelector('.card-add input').focus();});
- host.querySelectorAll('.list-card').forEach(el=>el.addEventListener('toggle',()=>{const id=el.dataset.list;if(el.open){if(!openedLists.has(id)){openedLists.clear();openedLists.add(id);state.activeId=id;save();window.scrollTo(0,0);}}else openedLists.delete(id);}));
+ host.querySelectorAll('.list-card').forEach(el=>el.addEventListener('toggle',()=>{const id=el.dataset.list;if(el.open){if(!openedLists.has(id)){openedLists.clear();openedLists.add(id);state.activeId=id;save();window.scrollTo(0,0);}}else openedLists.delete(id);fitListOverview();}));
  host.querySelectorAll('.done-accordion').forEach(el=>el.addEventListener('toggle',()=>{const id=el.closest('.list-card').dataset.list;el.open?shownDone.add(id):shownDone.delete(id);}));
 }
 // Reihenfolge für den Einkauf. Die Zuordnung wird aus dem Artikelnamen berechnet.
@@ -295,7 +324,7 @@ function itemInput(item) {
     : `${item.text} — ${item.amount}`;
 }
 
-function itemHTML(x,dish=false){return `<div class="item ${dish?'dish-item':x.done?'done':''}" data-id="${esc(x.id)}">${dish?'':`<button class="check ${x.done?'checked':''}" data-act="toggle" data-id="${esc(x.id)}" aria-label="${x.done?'Nicht erledigt':'Erledigt'}">${x.done?'✓':''}</button>`}<button class="item-main" data-act="edit" data-id="${esc(x.id)}">${esc(x.text)}${x.amount?`<em>${esc(x.amount)}</em>`:''}</button><button class="item-edit" data-act="edit" data-id="${esc(x.id)}" aria-label="Bearbeiten">⋯</button></div>`;}
+function itemHTML(x,dish=false){return `<div class="item ${dish?'dish-item':x.done?'done':''}" data-id="${esc(x.id)}">${dish?'':`<button class="check ${x.done?'checked':''}" data-act="toggle" data-id="${esc(x.id)}" aria-label="${x.done?'Nicht erledigt':'Erledigt'}">${x.done?'✓':''}</button>`}<button class="item-main" data-act="edit" data-id="${esc(x.id)}">${esc(x.text)}${x.amount?`<em>${esc(x.amount)}</em>`:''}</button><button class="item-edit" data-act="edit" data-id="${esc(x.id)}" aria-label="Bearbeiten">⋯</button><button type="button" class="item-grip" aria-label="Eintrag verschieben" title="Gedrückt halten und ziehen oder Pfeiltasten verwenden"><span aria-hidden="true">⠿</span></button></div>`;}
 function persist(){save();render();}
 function useList(id){if(state.lists.some(x=>x.id===id)){state.activeId=id;persist();}}
 function addItem(text,amount=''){const a=active(),t=text.trim();if(!t)return;const parsed=!isShopping(a)?{text:t,amount:''}:splitQuantity(t);let item={id:uid(),listId:a.id,text:(amount?t:parsed.text).slice(0,140),amount:String(amount||parsed.amount).trim().slice(0,100),done:false,updatedAt:Date.now()};state.items.push(item);persist();syncItem(a,item,'set');}
@@ -318,7 +347,7 @@ function newListModal(){
  storeSelect.onchange=()=>{customLabel.classList.toggle('hidden',storeSelect.value!=='__custom__');if(!customLabel.classList.contains('hidden'))customLabel.querySelector('input').focus();};
  $('#listForm').onsubmit=e=>{e.preventDefault();const store=typeSelect.value==='dishes'?DISH_STORE:typeSelect.value==='todo'?TODO_STORE:(storeSelect.value==='__custom__'?formVal('customStore'):storeSelect.value);if(!store||(typeSelect.value==='shopping'&&[TODO_STORE,DISH_STORE].includes(store))){alertToast('Bitte ein anderes Geschäft eingeben');return;}createList(formVal('name'),store,e.currentTarget.elements.listColor.value);closeModal();alertToast('Liste erstellt');};
 }
-function itemModal(id){const x=state.items.find(z=>z.id===id);if(!x)return;const list=state.lists.find(list=>list.id===x.listId), todo=isTodo(list), dish=isDishes(list);const otherListOptions=state.lists.map(l=>`<option value="${esc(l.id)}" ${l.id===x.listId?'selected':''}>${esc(l.name)} (${isDishes(l)?'Gerichte':isTodo(l)?'To-do':esc(l.store)})</option>`).join('');openModal(dish?'Gericht bearbeiten':todo?'Aufgabe bearbeiten':'Artikel bearbeiten',`<form id="itemForm"><label class="field">${dish?'Gericht':'Artikel'}<input name="name" value="${esc(itemInput(x))}" maxlength="243" placeholder="${dish?'z. B. Paprikahendl':'z. B. 500g Tofu'}" required></label>${dish?`<label class="field">Zutaten · eine pro Zeile<textarea name="ingredients" rows="6" maxlength="12000" placeholder="500 g Hendl&#10;2 Paprika&#10;1 Zwiebel">${esc(x.ingredients || '')}</textarea></label>`:''}<label class="field">Liste<select name="targetList">${otherListOptions}</select></label><div class="modal-actions"><button class="primary" type="submit">Speichern</button>${todo||dish?'':'<button class="secondary" id="itemCategoryBtn" type="button">Kategorie ändern</button>'}<button class="danger" id="deleteItemBtn" type="button">Löschen</button></div></form>`);$('#itemForm').onsubmit=e=>{e.preventDefault();const value=formVal('name');if(!value)return;if(dish){const current=state.items.find(item=>item.id===id);if(!current){closeModal();return;}current.ingredients=formVal('ingredients').slice(0,12000);const oldName=current.text;const newName=value.slice(0,140);if(oldName!==newName&&!listItems(list.id).some(item=>item.id!==id&&dishKey(item.text)===dishKey(oldName))){for(const plan of [list.weekPlan,planDrafts.get(list.id)]){if(!plan)continue;const index=plan.findIndex(name=>dishKey(name)===dishKey(oldName));if(index>=0)plan[index]=plan.some((name,i)=>i!==index&&dishKey(name)===dishKey(newName))?'':newName;}}save();}if(value!==itemInput(x)){const parsed=todo||dish?{text:value,amount:''}:splitQuantity(value);editItem(id,parsed.text,parsed.amount);}const dest=formVal('targetList');if(dest && dest!==x.listId)moveItem(id,dest);closeModal();};if(!todo&&!dish)$('#itemCategoryBtn').onclick=()=>categoryModal(id);$('#deleteItemBtn').onclick=()=>{if(confirm('Artikel löschen?')){deleteItem(id);closeModal();}};}
+function itemModal(id){const x=state.items.find(z=>z.id===id);if(!x)return;const list=state.lists.find(list=>list.id===x.listId), todo=isTodo(list), dish=isDishes(list);const otherListOptions=state.lists.map(l=>`<option value="${esc(l.id)}" ${l.id===x.listId?'selected':''}>${esc(l.name)} (${isDishes(l)?'Gerichte':isTodo(l)?'To-do':esc(l.store)})</option>`).join('');openModal(dish?'Gericht bearbeiten':todo?'Aufgabe bearbeiten':'Artikel bearbeiten',`<form id="itemForm"><label class="field">${dish?'Gericht':'Artikel'}<input name="name" value="${esc(itemInput(x))}" maxlength="243" placeholder="${dish?'z. B. Paprikahendl':'z. B. 500g Tofu'}" required></label>${dish?`<label class="field">Zutaten · eine pro Zeile<textarea name="ingredients" rows="6" maxlength="12000" placeholder="500 g Hendl&#10;2 Paprika&#10;1 Zwiebel">${esc(x.ingredients || '')}</textarea></label>`:''}<label class="field">Liste<select name="targetList">${otherListOptions}</select></label><div class="modal-actions"><button class="primary" type="submit">Speichern</button>${todo||dish?'':'<button class="secondary" id="itemCategoryBtn" type="button">Kategorie ändern</button>'}<button class="danger" id="deleteItemBtn" type="button">Löschen</button></div></form>`);$('#itemForm').onsubmit=e=>{e.preventDefault();const value=formVal('name');if(!value)return;if(dish){const current=state.items.find(item=>item.id===id);if(!current){closeModal();return;}current.ingredients=formVal('ingredients').slice(0,12000);const oldName=current.text;const newName=value.slice(0,140);if(oldName!==newName&&!listItems(list.id).some(item=>item.id!==id&&dishKey(item.text)===dishKey(oldName))){for(const plan of [list.weekPlan,planDrafts.get(list.id)]){if(!plan)continue;const index=plan.findIndex(name=>dishKey(name)===dishKey(oldName));if(index>=0)plan[index]=plan.some((name,i)=>i!==index&&dishKey(name)===dishKey(newName))?'':newName;}}save();}if(value!==itemInput(x)){const parsed=todo||dish?{text:value,amount:''}:splitQuantity(value);editItem(id,parsed.text,parsed.amount);}const dest=formVal('targetList');if(dest && dest!==x.listId)moveItem(id,dest);closeModal();};if(!todo&&!dish)$('#itemCategoryBtn').onclick=()=>categoryModal(id);$('#deleteItemBtn').onclick=async()=>{if(await confirmDeletion('Eintrag löschen?', '„'+x.text+'“ wird aus der Liste gelöscht.')){deleteItem(id);closeModal();}};}
 function listModal(){let l=active();openModal('Liste verwalten',`
 <div class="list-menu-grid">
   <button id="syncListBtn" class="menu-action" type="button"><span>♧</span> Liste mit Partnerin verbinden <small>QR-Code / Synchronisierung</small></button>
@@ -334,7 +363,7 @@ function listModal(){let l=active();openModal('Liste verwalten',`
 <hr class="divider"><button class="danger" id="clearListBtn" type="button">Liste leeren</button> <button class="danger" id="deleteListBtn" type="button">Liste löschen</button>
 <p class="info">Bei einer geteilten Liste sehen alle verbundenen Personen Änderungen an den Artikeln. Synchronisierung funktioniert erst nach der Firebase-Einrichtung.</p>`);
  $('#listEditForm').onsubmit=e=>{e.preventDefault();l.name=formVal('name').slice(0,70);if(isShopping(l))l.store=formVal('store').slice(0,60)||'Alle Geschäfte';l.color=e.currentTarget.elements.listColor.value;persist();syncMeta(l);closeModal();};
- $('#clearDoneBtn').onclick=()=>{if(clearDone(l))closeModal();};
+ $('#clearDoneBtn').onclick=async()=>{if(await clearDone(l))closeModal();};
  $('#deleteListBtn').onclick=()=>removeList(l);
  $('#cloneListBtn').onclick=cloneCurrentList;
  $('#clearListBtn').onclick=clearCurrentList;
@@ -353,14 +382,51 @@ function cloneCurrentList(){
  state.lists.push(target);state.items.push(...copied);state.activeId=target.id;
  persist();closeModal();alertToast('Private Kopie mit '+copied.length+' Artikeln erstellt');
 }
-function removeList(l){if(state.lists.length===1){alertToast('Mindestens eine Liste behalten');return;}if(confirm('Liste wirklich von diesem Gerät entfernen?')){planDrafts.delete(l.id);openedLists.delete(l.id);shownDone.delete(l.id);stopListen(l.sharedId);state.lists=state.lists.filter(z=>z.id!==l.id);state.items=state.items.filter(z=>z.listId!==l.id);state.activeId=state.lists[0].id;persist();closeModal();}}
-function clearDone(list) {
+function confirmDeletion(title, message) {
+  const dialog = document.createElement('dialog');
+  dialog.className = 'delete-dialog';
+  dialog.setAttribute('aria-label', title);
+  dialog.innerHTML = `<form method="dialog">
+    <h2>${esc(title)}</h2>
+    <p>${esc(message)}</p>
+    <div class="modal-actions">
+      <button class="secondary" value="cancel" autofocus>Abbrechen</button>
+      <button class="danger" value="delete">Löschen</button>
+    </div>
+  </form>`;
+  document.body.append(dialog);
+  return new Promise(resolve => {
+    dialog.addEventListener('close', () => {
+      dialog.remove();
+      resolve(dialog.returnValue === 'delete');
+    }, {once: true});
+    dialog.showModal();
+  });
+}
+
+async function removeList(list) {
+  if (state.lists.length === 1) return alertToast('Mindestens eine Liste behalten');
+  const message = list.sharedId
+    ? `„${list.name}“ wird von diesem Gerät entfernt. Für andere bleibt die Liste erhalten.`
+    : `„${list.name}“ und alle Einträge werden gelöscht.`;
+  if (!await confirmDeletion('Liste löschen?', message)) return;
+  planDrafts.delete(list.id);
+  openedLists.delete(list.id);
+  shownDone.delete(list.id);
+  stopListen(list.sharedId);
+  state.lists = state.lists.filter(entry => entry.id !== list.id);
+  state.items = state.items.filter(item => item.listId !== list.id);
+  state.activeId = state.lists[0].id;
+  persist();
+  closeModal();
+}
+async function clearDone(list) {
   const completed = listItems(list.id).filter(item => item.done);
   if (!completed.length) {
     alertToast('Nichts zu entfernen');
     return false;
   }
-  if (!confirm(`${completed.length} erledigte Einträge löschen?`)) return false;
+  if (!await confirmDeletion('Erledigte löschen?', 'Offene Einträge bleiben auf der Liste.')) return false;
   const ids = new Set(completed.map(item => item.id));
   state.items = state.items.filter(item => item.listId !== list.id || !ids.has(item.id));
   completed.forEach(item => syncItem(list, item, 'delete'));
@@ -368,10 +434,10 @@ function clearDone(list) {
   persist();
   return true;
 }
-function clearCurrentList(){
+async function clearCurrentList(){
  const l=active(),items=listItems(l.id);
  if(!items.length){alertToast('Liste ist bereits leer');return;}
- if(!confirm('Alle '+items.length+' Artikel aus „'+l.name+'“ löschen?'))return;
+ if(!await confirmDeletion('Liste leeren?', 'Alle Einträge in „'+l.name+'“ werden gelöscht.'))return;
  for(const item of items)syncItem(l,item,'delete');
  state.items=state.items.filter(i=>i.listId!==l.id);
  persist();closeModal();alertToast('Liste geleert');
@@ -615,8 +681,9 @@ function settingsModal(){openModal('Einstellungen & Backup',`<label class="field
 async function restore(file){if(!file)return;try{let j=JSON.parse(await file.text());if(j.format!=='einkauf-v1'||!Array.isArray(j.data?.lists)||!Array.isArray(j.data?.items)||j.data.lists.length>100||j.data.items.length>10000)throw Error('Unbekanntes Dateiformat');const ids=new Set(j.data.lists.map(x=>x.id));let lists=j.data.lists.filter(x=>typeof x.id==='string'&&typeof x.name==='string').map(x=>({id:x.id.slice(0,80),name:x.name.slice(0,70),store:String(x.store||'Alle Geschäfte').slice(0,60),sharedId:null,weekPlan:isDishes(x)&&Array.isArray(x.weekPlan)?WEEKDAYS.map((_,i)=>typeof x.weekPlan[i]==='string'?x.weekPlan[i].slice(0,140):''):undefined,color:LIST_COLORS.has(x.color)?x.color:undefined}));let items=j.data.items.filter(x=>ids.has(x.listId)&&typeof x.text==='string').map(x=>({id:String(x.id).slice(0,80),listId:String(x.listId).slice(0,80),text:x.text.slice(0,140),amount:String(x.amount||'').slice(0,100),done:!!x.done,ingredients:typeof x.ingredients==='string'?x.ingredients.slice(0,12000):undefined,department:departments.some(([label])=>label===x.department)?x.department:undefined,updatedAt:Number(x.updatedAt)||Date.now()}));if(!lists.length)throw Error('Keine Listen');if(!confirm('Aktuelle lokale Listen durch dieses Backup ersetzen?'))return;listeners.forEach(off=>off());listeners.clear();planDrafts.clear();state={...initial(),lists,items,activeId:lists[0].id};persist();closeModal();alertToast('Backup wiederhergestellt');}catch(e){alertToast('Backup ungültig: '+e.message);}}
 // Firebase cloud. Auth is per-device, users are authenticated anonymously.
 let authWatching=false;
-async function applyUser(user){for(const off of listeners.values())off();listeners.clear();cloudUser=null;firebaseReady=false;cloudError='';
- if(user&&!user.isAnonymous){try{const approved=await cloud.collection('allowedUsers').doc(user.uid).get({source:'server'});if(!approved.exists||approved.data().enabled!==true){cloudError='Dieses Google-Konto ist noch nicht freigeschaltet. Nutzer-ID: '+user.uid;}else{cloudUser=user;firebaseReady=true;for(const l of state.lists)if(l.sharedId)watchList(l);alertToast('Google-Anmeldung und Cloud bereit');}}catch(e){cloudError='Freischaltung konnte nicht geprüft werden. Nutzer-ID: '+user.uid+' — '+(navigator.onLine?e.message:'kein Internet');}}
+let authAttempt=0;
+async function applyUser(user){const attempt=++authAttempt;for(const off of listeners.values())off();listeners.clear();cloudUser=null;firebaseReady=false;cloudError='';
+ if(user&&!user.isAnonymous){try{const approved=await cloud.collection('allowedUsers').doc(user.uid).get({source:'server'});if(attempt!==authAttempt)return;if(!approved.exists||approved.data().enabled!==true){cloudError='Dieses Google-Konto ist noch nicht freigeschaltet. Nutzer-ID: '+user.uid;}else{cloudUser=user;firebaseReady=true;for(const l of state.lists)if(l.sharedId)watchList(l);alertToast('Google-Anmeldung und Cloud bereit');}}catch(e){if(attempt!==authAttempt)return;cloudError='Freischaltung konnte nicht geprüft werden. Nutzer-ID: '+user.uid+' — '+(navigator.onLine?e.message:'kein Internet');}}
  render();if(!$('#overlay').hidden&&$('#syncInfo'))settingsModal();}
 async function initFirebase(){const cfg=window.WOHIN_FIREBASE_CONFIG;if(!cfg?.apiKey||!cfg?.projectId)return;firebaseBusy=true;
 try{await loadScript('https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js');await loadScript('https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js');await loadScript('https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js');
@@ -626,18 +693,108 @@ if(!authWatching){authWatching=true;firebase.auth().onAuthStateChanged(applyUser
 async function googleLogin(){try{await firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider());}catch(e){const m={'auth/unauthorized-domain':'Diese Adresse ist in Firebase nicht freigegeben: Authentication → Einstellungen → Autorisierte Domains → '+location.hostname+' hinzufügen.','auth/popup-blocked':'Das Anmeldefenster wurde blockiert. Bitte Pop-ups für diese Seite erlauben.','auth/popup-closed-by-user':'Anmeldung abgebrochen.','auth/network-request-failed':'Kein Internet.'};alertToast(m[e.code]||('Google-Anmeldung: '+e.message),e.code==='auth/unauthorized-domain'?9000:4000);}}
 function needCloud(){if(!firebaseReady||!cloudUser||!cloud){settingsModal();return false;}return true;}
 const sharedRef=id=>cloud.collection('sharedLists').doc(id);
-function syncItem(l,item,op){if(!l?.sharedId)return;const payload={text:item.text,amount:item.amount,done:item.done,updatedAt:item.updatedAt};const id=l.sharedId;
- // Firestore persists pending writes offline. The local copy is the immediate UI state.
- if(cloudUser){let ref=sharedRef(id).collection('items').doc(item.id);const p=op==='delete'?ref.delete():ref.set(payload);p.catch(e=>{console.error(e);alertToast('Cloud: Änderung konnte nicht übertragen werden');});}
- else{state.pending.push({id,op,itemId:item.id,payload});save();}
+let syncing = false;
+let retrySync;
+function queueChange(change) {
+  state.pending.push(change);
+  save();
+  flushPending();
 }
-function syncMeta(l){if(!l.sharedId)return;if(l.ownerUid&&l.ownerUid!==cloudUser?.uid){alertToast('Nur die Person, die diese Liste erstellt hat, kann sie umbenennen');return;}if(cloudUser){sharedRef(l.sharedId).update({name:l.name,store:l.store}).catch(e=>alertToast('Änderung nicht synchronisiert'));}}
-async function flushPending(){if(!cloudUser||!state.pending.length)return;let tasks=state.pending.slice();state.pending=[];save();for(const task of tasks){try{let r=sharedRef(task.id).collection('items').doc(task.itemId);await(task.op==='delete'?r.delete():r.set(task.payload));}catch(e){state.pending.push(task);save();}}}
+
+function syncItem(list, item, op) {
+  if (!list?.sharedId) return;
+  queueChange({id: list.sharedId, itemId: item.id, op, payload: {
+    text: item.text, amount: item.amount, done: item.done, updatedAt: item.updatedAt
+  }});
+}
+
+function syncMeta(list) {
+  if (!list.sharedId) return;
+  const uid = cloudUser?.uid || window.firebase?.auth().currentUser?.uid;
+  if (uid && list.ownerUid && uid !== list.ownerUid) {
+    alertToast('Nur die Person, die diese Liste erstellt hat, kann sie umbenennen');
+    return;
+  }
+  queueChange({id: list.sharedId, op: 'meta', payload: {name: list.name, store: list.store}});
+}
+
+async function flushPending() {
+  if (syncing || !cloudUser || !navigator.onLine || !state.pending.length) return;
+  clearTimeout(retrySync);
+  syncing = true;
+  const uid = cloudUser.uid;
+  try {
+    for (const task of state.pending.slice()) {
+      if (cloudUser?.uid !== uid || !navigator.onLine) break;
+      if (!state.pending.includes(task)) continue;
+      try {
+        const list = sharedRef(task.id);
+        if (task.op === 'meta') {
+          await list.update(task.payload);
+        } else {
+          const ref = list.collection('items').doc(task.itemId);
+          await (task.op === 'delete' ? ref.delete() : ref.set(task.payload));
+        }
+        state.pending = state.pending.filter(entry => entry !== task);
+        save();
+      } catch (error) {
+        console.warn('Synchronisierung ausstehend', error.code || error.message);
+        if (error.code === 'permission-denied' || error.code === 'not-found') continue;
+        break;
+      }
+    }
+  } finally {
+    syncing = false;
+    if (cloudUser && navigator.onLine && state.pending.length) {
+      retrySync = setTimeout(flushPending, 5000);
+    }
+  }
+}
+
 function stopListen(id){if(id&&listeners.has(id)){listeners.get(id)();listeners.delete(id);}}
-function watchList(l){if(!cloud||!l.sharedId||listeners.has(l.sharedId))return;let sid=l.sharedId;
- const off1=sharedRef(sid).onSnapshot(s=>{if(!s.exists){return;}const cur=state.lists.find(z=>z.sharedId===sid);if(!cur)return;if(s.data().name&&cur.name!==s.data().name){cur.name=s.data().name;cur.store=s.data().store||'Alle Geschäfte';persist();}},err=>console.warn('Liste abonnieren',err.message));
- const off2=sharedRef(sid).collection('items').onSnapshot(s=>{const cur=state.lists.find(z=>z.sharedId===sid);if(!cur)return;for(const change of s.docChanges()){let idx=state.items.findIndex(i=>i.listId===cur.id&&i.id===change.doc.id);if(change.type==='removed'){if(idx!==-1)state.items.splice(idx,1);continue;}const d=change.doc.data(),item={id:change.doc.id,listId:cur.id,text:String(d.text||'').slice(0,140),amount:String(d.amount||''),done:!!d.done,updatedAt:d.updatedAt||Date.now()};if(idx===-1)state.items.push(item);else state.items[idx]={...item,department:state.items[idx].department,ingredients:state.items[idx].ingredients};}persist();},err=>{console.error(err);alertToast('Cloud-Zugriff fehlgeschlagen');});
- listeners.set(sid,()=>{off1();off2();});flushPending();}
+function watchList(list) {
+  const id = list.sharedId;
+  if (!cloud || !id || listeners.has(id)) return;
+  const options = {includeMetadataChanges: true};
+  const offMeta = sharedRef(id).onSnapshot(options, snapshot => {
+    if (!snapshot.exists || snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites) return;
+    const current = state.lists.find(entry => entry.sharedId === id);
+    if (!current || state.pending.some(task => task.id === id && task.op === 'meta')) return;
+    const {name, store} = snapshot.data();
+    if (name && (current.name !== name || current.store !== store)) {
+      current.name = name;
+      current.store = store || 'Alle Geschäfte';
+      persist();
+    }
+  }, error => console.warn('Liste abonnieren', error.message));
+  const offItems = sharedRef(id).collection('items').onSnapshot(options, snapshot => {
+    if (snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites) return;
+    const current = state.lists.find(entry => entry.sharedId === id);
+    if (!current) return;
+    const pending = new Set(state.pending.filter(task => task.id === id).map(task => task.itemId));
+    const remote = new Map(snapshot.docs.map(doc => [doc.id, doc.data()]));
+    const readItem = (itemId, data) => ({
+      id: itemId, listId: current.id, text: String(data.text || '').slice(0,140),
+      amount: String(data.amount || ''), done: !!data.done, updatedAt: data.updatedAt || Date.now()
+    });
+    const next = [];
+    for (const item of state.items) {
+      if (item.listId !== current.id || pending.has(item.id)) {
+        next.push(item);
+      } else if (remote.has(item.id)) {
+        next.push({...item, ...readItem(item.id, remote.get(item.id))});
+      }
+      if (item.listId === current.id) remote.delete(item.id);
+    }
+    for (const [itemId, data] of remote) {
+      if (!pending.has(itemId)) next.push(readItem(itemId, data));
+    }
+    state.items = next;
+    if (draggedItem) save(); else persist();
+  }, error => console.warn('Einträge abonnieren', error.message));
+  listeners.set(id, () => { offMeta(); offItems(); });
+  flushPending();
+}
 async function startShare(){if(!needCloud())return;const l=active();if(l.sharedId&&l.ownerUid&&l.ownerUid!==cloudUser.uid){alertToast('Nur die erstellende Person kann neue Einladungen versenden');return;}if(l.sharedId)return createInvite(l);
  try{let sid=uid();let ref=sharedRef(sid),batch=cloud.batch();await ref.set({name:l.name,store:l.store,ownerUid:cloudUser.uid,createdAt:firebase.firestore.FieldValue.serverTimestamp()});for(const item of listItems(l.id))batch.set(ref.collection('items').doc(item.id),{text:item.text,amount:item.amount,done:item.done,updatedAt:item.updatedAt});await batch.commit();l.sharedId=sid;l.ownerUid=cloudUser.uid;persist();watchList(l);await createInvite(l);}catch(e){console.error(e);alertToast('Teilen nicht möglich: '+e.message);}}
 async function createInvite(l){if(!needCloud())return;try{let code=uid().replace(/-/g,'')+uid().replace(/-/g,'');let expires=firebase.firestore.Timestamp.fromDate(new Date(Date.now()+15*60*1000));await cloud.collection('invites').doc(code).set({listId:l.sharedId,ownerUid:cloudUser.uid,createdAt:firebase.firestore.FieldValue.serverTimestamp(),expiresAt:expires,usedBy:null});
@@ -666,13 +823,90 @@ function cancelItemPress() {
   itemPress = null;
 }
 
+let draggedItem = null;
+let dragFrame;
+
+function moveRow(listId, sourceId, targetId, after) {
+  const source = state.items.find(item => item.listId === listId && item.id === sourceId);
+  const target = state.items.find(item => item.listId === listId && item.id === targetId);
+  if (!source || !target || source === target || source.done !== target.done) return;
+  const list = state.lists.find(entry => entry.id === listId);
+  if (!list || (isShopping(list) && !source.done &&
+      itemDepartment(source) !== itemDepartment(target))) return;
+  state.items.splice(state.items.indexOf(source), 1);
+  state.items.splice(state.items.indexOf(target) + Number(after), 0, source);
+  save();
+}
+
+function updateDragTarget() {
+  const drag = draggedItem;
+  drag.target?.classList.remove('drop-before', 'drop-after');
+  drag.target = null;
+  if (drag.x < 0 || drag.x > innerWidth) return;
+  const groupRect = drag.row.parentElement.getBoundingClientRect();
+  if (drag.x < groupRect.left || drag.x > groupRect.right) return;
+  if (drag.y < groupRect.top - 12 || drag.y > groupRect.bottom + 12) return;
+  const rows = [...drag.row.parentElement.children].filter(row =>
+    row !== drag.row && row.matches('.item'));
+  const target = rows.find(row => drag.y < row.getBoundingClientRect().bottom) || rows.at(-1);
+  if (!target) return;
+  const bounds = target.getBoundingClientRect();
+  drag.after = drag.y >= bounds.top + bounds.height / 2;
+  drag.target = target;
+  target.classList.add(drag.after ? 'drop-after' : 'drop-before');
+}
+
+function dragTick() {
+  const y = draggedItem.y;
+  const edge = Math.min(78, innerHeight / 5);
+  if (y < edge) window.scrollBy(0, -9);
+  else if (y > innerHeight - edge) window.scrollBy(0, 9);
+  updateDragTarget();
+  dragFrame = requestAnimationFrame(dragTick);
+}
+
+function startItemDrag(grip, event) {
+  const row = grip.closest('.item');
+  draggedItem = {row, x: event.clientX, y: event.clientY, pointerId: event.pointerId};
+  row.classList.add('item-dragging');
+  grip.setPointerCapture(event.pointerId);
+  dragFrame = requestAnimationFrame(dragTick);
+}
+
+function finishItemDrag(event) {
+  if (draggedItem?.pointerId !== event.pointerId) return;
+  cancelAnimationFrame(dragFrame);
+  const {row, target, after} = draggedItem;
+  draggedItem = null;
+  if (event.type === 'pointerup' && target) {
+    moveRow(row.closest('.list-card').dataset.list, row.dataset.id, target.dataset.id, after);
+  }
+  render();
+}
+
+listCards.addEventListener('keydown', event => {
+  if (!event.target.matches('.item-grip') || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+  event.preventDefault();
+  const row = event.target.closest('.item');
+  const after = event.key === 'ArrowDown';
+  const target = after ? row.nextElementSibling : row.previousElementSibling;
+  if (!target?.matches('.item')) return;
+  const id = row.dataset.id;
+  const listId = row.closest('.list-card').dataset.list;
+  moveRow(listId, id, target.dataset.id, after);
+  render();
+  const card = [...listCards.querySelectorAll('.list-card')].find(entry => entry.dataset.list === listId);
+  [...card.querySelectorAll('.item')].find(entry => entry.dataset.id === id)?.querySelector('.item-grip')?.focus();
+});
+
 listCards.addEventListener('pointerdown', event => {
   if (!event.isPrimary || event.button !== 0) return;
   heldItemButton = null;
   cancelItemPress();
   if (event.target.closest('.list-trash')) return;
   const summary = event.target.closest('.list-card > summary');
-  const button = summary || event.target.closest('[data-kind=shopping] .item-main');
+  const grip = event.target.closest('.item-grip');
+  const button = summary || grip || event.target.closest('[data-kind=shopping] .item-main');
   if (!button) return;
   const {pointerId, clientX, clientY} = event;
   const timer = setTimeout(() => {
@@ -681,6 +915,8 @@ listCards.addEventListener('pointerdown', event => {
     heldItemButton = button;
     if (summary) {
       showListTrash(summary);
+    } else if (grip) {
+      startItemDrag(grip, event);
     } else {
       categoryModal(button.dataset.id);
     }
@@ -689,6 +925,11 @@ listCards.addEventListener('pointerdown', event => {
 });
 
 window.addEventListener('pointermove', event => {
+  if (draggedItem?.pointerId === event.pointerId) {
+    draggedItem.x = event.clientX;
+    draggedItem.y = event.clientY;
+    updateDragTarget();
+  }
   if (itemPress?.pointerId === event.pointerId &&
       Math.hypot(event.clientX - itemPress.clientX, event.clientY - itemPress.clientY) > 10) {
     cancelItemPress();
@@ -697,11 +938,12 @@ window.addEventListener('pointermove', event => {
 for (const type of ['pointerup', 'pointercancel']) {
   window.addEventListener(type, event => {
     if (itemPress?.pointerId === event.pointerId) cancelItemPress();
+    finishItemDrag(event);
   });
 }
 window.addEventListener('blur', cancelItemPress);
 listCards.addEventListener('contextmenu', event => {
-  if (event.target.closest('.item-main, .list-card > summary') && (itemPress || heldItemButton)) event.preventDefault();
+  if (event.target.closest('.item-main, .item-grip, .list-card > summary') && (itemPress || heldItemButton)) event.preventDefault();
 });
 listCards.addEventListener('click', event => {
   if (heldItemButton && event.detail && heldItemButton.contains(event.target)) {
@@ -801,6 +1043,7 @@ $('#newListBtn').onclick=newListModal;$('#settingsBtn').onclick=settingsModal;
 $('#scanFile').onchange=e=>{handleImage(e.target.files?.[0]);e.target.value='';};$('#backupFile').onchange=e=>{restore(e.target.files?.[0]);e.target.value='';};
 if(window.AndroidEinkauf && 'serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.unregister())).catch(()=>{});}else if('serviceWorker' in navigator && location.protocol.startsWith('http')){navigator.serviceWorker.register('./sw.js').catch(console.warn);}
 window.addEventListener('online',()=>{if(firebaseReady){flushPending();render();}else if(cloud&&window.firebase&&firebase.auth().currentUser)applyUser(firebase.auth().currentUser);else if(!firebaseBusy&&window.WOHIN_FIREBASE_CONFIG)initFirebase();});window.addEventListener('offline',render);
-window.einkaufAndroidBack=()=>{if(trashPreview){hideListTrash();return true;}if(!$('#overlay').hidden){closeModal();return true;}return false;};
+window.einkaufAndroidBack=()=>{const deletion=$('.delete-dialog[open]');if(deletion){deletion.close('cancel');return true;}if(trashPreview){hideListTrash();return true;}if(!$('#overlay').hidden){closeModal();return true;}return false;};
+window.addEventListener('resize', fitListOverview);
 render();initFirebase();
 })();

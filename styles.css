@@ -496,3 +496,62 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .list-trash-preview .list-trash { animation: none; }
 }
+
+.item-grip {
+  flex: 0 0 34px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 20px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.item-dragging { opacity: .55; }
+.item.drop-before { box-shadow: inset 0 3px var(--forest); }
+.item.drop-after { box-shadow: inset 0 -3px var(--forest); }
+.delete-dialog {
+  width: min(90vw, 380px);
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--paper);
+  color: var(--ink);
+}
+.delete-dialog::backdrop { background: #172b215c; backdrop-filter: blur(5px); }
+.delete-dialog h2 { margin: 0; font-size: 1.25rem; }
+.delete-dialog p { margin: 10px 0 16px; }
+.delete-dialog .modal-actions { justify-content: flex-end; }
+
+#listCards:not(:has(> .list-card[open])) {
+  grid-template-columns: repeat(var(--overview-columns, 2), minmax(0, 1fr));
+  gap: 8px;
+}
+#listCards:not(:has(> .list-card[open])) > .list-card > summary {
+  aspect-ratio: auto;
+  height: calc(var(--overview-tile-height, 140px) - 2px);
+  overflow: hidden;
+}
+#listCards.overview-compact > .list-card:not([open]) > summary {
+  padding: 7px 8px;
+  gap: 2px 4px;
+}
+#listCards.overview-compact > .list-card:not([open]) .list-name {
+  font-size: clamp(.72rem, 3.25vw, .9rem);
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+  -webkit-line-clamp: 2;
+  max-height: 100%;
+}
+#listCards.overview-compact > .list-card:not([open]) .open-count { font-size: .68rem; }
+#listCards.overview-title-only > .list-card:not([open]) > summary {
+  grid-template-rows: minmax(0, 1fr);
+  align-content: center;
+}
+#listCards.overview-title-only > .list-card:not([open]) .list-name { align-self: center; }
+#listCards.overview-title-only > .list-card:not([open]) :is(.open-count, .card-chevron) {
+  display: none;
+}
