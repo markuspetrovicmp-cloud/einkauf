@@ -248,8 +248,9 @@ function fitListOverview() {
   grid.classList.toggle('overview-title-only', tileHeight < 66);
 }
 
-function render(){if(draggedItem)return;let a=active();if(!a){state=initial();a=active();save();}
+function render(){if(draggedItem || tileDrag)return;let a=active();if(!a){state=initial();a=active();save();}
  const host=$('#listCards');const typed={};host.querySelectorAll('.card-add input').forEach(i=>{if(i.value)typed[i.closest('.list-card').dataset.list]=i.value;});const focusList=document.activeElement?.closest?.('.card-add')?.closest('.list-card')?.dataset.list;host.innerHTML=state.lists.map((l,index)=>{const all=listItems(l.id),todo=all.filter(x=>!x.done),done=all.filter(x=>x.done);return `<details name="einkauf-lists" class="list-card" data-kind="${isDishes(l)?'dishes':isTodo(l)?'todo':'shopping'}" data-color="${listColor(l,index)}" data-list="${esc(l.id)}" ${openedLists.has(l.id)?'open':''}><summary><span class="list-name">${esc(l.name)}</span><span class="open-count">${isDishes(l)?all.length+' Gerichte':todo.length+' offen'}</span><span class="card-chevron" aria-hidden="true"></span><button type="button" class="list-trash" data-card-action="delete-list" aria-label="Liste entfernen" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 10v7m4-7v7"/></svg></button></summary><div class="card-top"><div class="card-meta"><span>${esc(l.sharedId?(cloudUser?(navigator.onLine?'Gemeinsam · verbunden':'Gemeinsam · offline'):'Gemeinsam · Anmeldung nötig'):'Privat · auf diesem Gerät')}</span><button data-card-action="menu" aria-label="Liste verwalten">⋯</button></div><div class="card-actions" ${!isShopping(l)?'hidden':''}><button data-card-action="scan">Zettel importieren</button><button class="gurkerl-copy" data-card-action="copy-gurkerl" ${todo.length ? '' : 'disabled'}>Für Gurkerl kopieren</button></div></div><div class="card-body"><form class="card-add"><input name="article" aria-label="${isDishes(l)?'Gericht':isTodo(l)?'Aufgabe':'Artikel'} für ${esc(l.name)}" placeholder="${isDishes(l)?'Gericht hinzufügen':isTodo(l)?'Aufgabe hinzufügen':'z. B. 500g Tofu'}" maxlength="140" autocomplete="off"><button class="dictation-mic" data-card-action="dictate" aria-label="Eintrag diktieren" type="button"><span aria-hidden="true">🎙</span></button><button aria-label="Eintrag hinzufügen" type="submit">+</button></form><div class="items">${isShopping(l)?departmentHTML(todo):(isDishes(l)?all:todo).map(item=>itemHTML(item,isDishes(l))).join('')}</div>${(isDishes(l)?!all.length:!todo.length)?`<p class="empty">${done.length?'Alles erledigt.':'Deine Liste ist noch leer.'}</p>`:''}${!isDishes(l)&&done.length?`<details class="done-accordion" ${shownDone.has(l.id)?'open':''}><summary>Erledigt · ${done.length}<span class="card-chevron" aria-hidden="true"></span></summary><div class="items done-items">${done.map(item=>itemHTML(item)).join('')}</div><button type="button" class="danger wide clear-done" data-card-action="clear-done">Erledigte löschen</button></details>`:''}${isDishes(l)?weekPlanHTML(l):''}<div class="card-secondary" ${isDishes(l)?'hidden':''}><button data-card-action="recipe">Aus Rezept</button><button data-card-action="share">Teilen</button><button data-card-action="export">Weitere Exporte</button></div></div></details>`;}).join('');
+ applyTileEditMode();
  host.querySelectorAll('.list-card').forEach(c=>{const v=typed[c.dataset.list];if(v!=null)c.querySelector('.card-add input').value=v;if(focusList&&c.dataset.list===focusList)c.querySelector('.card-add input').focus();});
  host.querySelectorAll('.list-card').forEach(el=>el.addEventListener('toggle',()=>{const id=el.dataset.list;if(el.open){if(!openedLists.has(id)){openedLists.clear();openedLists.add(id);state.activeId=id;save();window.scrollTo(0,0);}}else openedLists.delete(id);fitListOverview();}));
  host.querySelectorAll('.done-accordion').forEach(el=>el.addEventListener('toggle',()=>{const id=el.closest('.list-card').dataset.list;el.open?shownDone.add(id):shownDone.delete(id);}));
@@ -815,6 +816,9 @@ async function startQRScan(){if(!needCloud())return;if(window.AndroidEinkauf?.sc
 window.onAndroidQRCode=code=>joinCode(code);
 // UI listeners
 const listCards = $('#listCards');
+let tileEditing = false;
+let tileDrag = null;
+let suppressTileClickUntil = 0;
 let itemPress = null;
 let heldItemButton = null;
 
@@ -905,6 +909,11 @@ listCards.addEventListener('pointerdown', event => {
   cancelItemPress();
   if (event.target.closest('.list-trash')) return;
   const summary = event.target.closest('.list-card > summary');
+  if (tileEditing && summary) {
+    event.preventDefault();
+    startTileDrag(summary.closest('.list-card'), event);
+    return;
+  }
   const grip = event.target.closest('.item-grip');
   const button = summary || grip || event.target.closest('[data-kind=shopping] .item-main');
   if (!button) return;
@@ -914,7 +923,7 @@ listCards.addEventListener('pointerdown', event => {
     if (!button.isConnected || !$('#overlay').hidden) return;
     heldItemButton = button;
     if (summary) {
-      showListTrash(summary);
+      enterTileEditMode();
     } else if (grip) {
       startItemDrag(grip, event);
     } else {
@@ -952,89 +961,110 @@ listCards.addEventListener('click', event => {
     event.stopImmediatePropagation();
   }
 }, true);
-let trashPreview = null;
+// Tile editing stays separate from dragging individual entries.
+const finishTilesButton = document.createElement('button');
+finishTilesButton.type = 'button';
+finishTilesButton.className = 'new-list-button finish-tiles';
+finishTilesButton.textContent = 'Fertig';
+finishTilesButton.hidden = true;
+$('#newListBtn').after(finishTilesButton);
+finishTilesButton.onclick = exitTileEditMode;
 
-function hideListTrash() {
-  if (!trashPreview) return;
-  const {overlay, summary} = trashPreview;
-  trashPreview = null;
-  overlay.remove();
-  if (summary.isConnected) summary.focus({preventScroll: true});
+function applyTileEditMode() {
+  document.body.classList.toggle('tile-editing', tileEditing);
+  finishTilesButton.hidden = !tileEditing;
+  $('#newListBtn').hidden = tileEditing;
+  listCards.querySelectorAll('.list-trash').forEach(button => button.hidden = !tileEditing);
 }
-
-function showListTrash(summary) {
-  hideListTrash();
-  const card = summary.closest('.list-card');
-  const rect = summary.getBoundingClientRect();
-  const overlay = document.createElement('div');
-  overlay.className = 'list-trash-overlay';
-  overlay.setAttribute('role', 'dialog');
-  overlay.setAttribute('aria-modal', 'true');
-  overlay.setAttribute('aria-label', 'Liste entfernen');
-  const preview = document.createElement('div');
-  preview.className = 'list-trash-preview';
-  const tile = document.createElement('div');
-  tile.className = 'list-trash-tile';
-  tile.style.backgroundColor = getComputedStyle(card).getPropertyValue('--tile').trim();
-  tile.style.color = getComputedStyle(summary).color;
-  tile.append(summary.querySelector('.list-name').cloneNode(true),
-    summary.querySelector('.open-count').cloneNode(true));
-  const button = summary.querySelector('.list-trash').cloneNode(true);
-  button.hidden = false;
-  preview.append(tile, button);
-  overlay.append(preview);
-  document.body.append(overlay);
-  trashPreview = {overlay, summary};
-  const target = preview.getBoundingClientRect();
-  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    const x = rect.left + (rect.width - target.width) / 2 - target.left;
-    const y = rect.top + (rect.height - target.height) / 2 - target.top;
-    preview.animate([
-      {transform: 'translate(' + x + 'px, ' + y + 'px) scale(' +
-        rect.width / target.width + ', ' + rect.height / target.height + ')'},
-      {transform: 'none'}
-    ], {duration: 260, easing: 'cubic-bezier(.2,.75,.28,1)'});
-  }
-  button.focus({preventScroll: true});
-  button.onclick = () => {
-    const list = state.lists.find(entry => entry.id === card.dataset.list);
-    hideListTrash();
-    if (list) removeList(list);
-  };
-  let swipeStart = null;
-  let dismissing = false;
-  overlay.onpointerdown = event => {
-    if (!event.isPrimary || event.button !== 0) return;
-    swipeStart = {id: event.pointerId, x: event.clientX, y: event.clientY};
-  };
-  overlay.onpointercancel = () => { swipeStart = null; };
-  overlay.onpointerup = event => {
-    if (swipeStart?.id !== event.pointerId) return;
-    const dx = Math.abs(event.clientX - swipeStart.x);
-    const upwardDistance = swipeStart.y - event.clientY;
-    swipeStart = null;
-    if (upwardDistance < 48 || upwardDistance <= dx) return;
-    dismissing = true;
-    requestAnimationFrame(() => {
-      if (trashPreview?.overlay === overlay) hideListTrash();
-    });
-  };
-  overlay.addEventListener('click', event => {
-    if (dismissing) event.stopImmediatePropagation();
-  }, true);
-  overlay.onclick = event => {
-    if (event.target === overlay) hideListTrash();
-  };
-  overlay.onkeydown = event => {
-    if (event.key === 'Tab') {
-      event.preventDefault();
-      button.focus();
+function enterTileEditMode() {
+  state.lists.forEach((list,index) => { if (!LIST_COLORS.has(list.color)) list.color = listColor(list,index); });
+  save();
+  tileEditing = true;
+  suppressTileClickUntil = Date.now() + 700;
+  openedLists.clear();
+  render();
+  fitListOverview();
+  navigator.vibrate?.(25);
+}
+function exitTileEditMode() {
+  if (tileDrag) finishTileDrag({pointerId: tileDrag.pointerId, type: 'pointercancel'});
+  tileEditing = false;
+  cancelItemPress();
+  applyTileEditMode();
+}
+function startTileDrag(card, event) {
+  const rect = card.getBoundingClientRect();
+  const ghost = card.cloneNode(true);
+  ghost.className = 'list-card tile-drag-ghost';
+  ghost.setAttribute('aria-hidden', 'true');
+  ghost.style.cssText = `position:fixed;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;--tile:${getComputedStyle(card).getPropertyValue('--tile')}`;
+  ghost.querySelectorAll('button').forEach(button => button.remove());
+  document.body.append(ghost);
+  tileDrag = {card, ghost, pointerId:event.pointerId, x:event.clientX, y:event.clientY, target:null};
+  card.classList.add('tile-drag-source');
+  listCards.setPointerCapture(event.pointerId);
+}
+function finishTileDrag(event) {
+  if (tileDrag?.pointerId !== event.pointerId) return;
+  const {card, ghost, target} = tileDrag;
+  tileDrag = null;
+  ghost.remove();
+  if (listCards.hasPointerCapture(event.pointerId)) listCards.releasePointerCapture(event.pointerId);
+  if (event.type === 'pointerup' && target) {
+    const from = state.lists.findIndex(list => list.id === card.dataset.list);
+    const to = state.lists.findIndex(list => list.id === target.dataset.list);
+    if (from >= 0 && to >= 0 && from !== to) {
+      const [list] = state.lists.splice(from, 1);
+      state.lists.splice(to, 0, list);
+      save();
     }
-  };
+  }
+  suppressTileClickUntil = Date.now() + 400;
+  render();
+  fitListOverview();
 }
-
+window.addEventListener('pointermove', event => {
+  if (tileDrag?.pointerId !== event.pointerId) return;
+  event.preventDefault();
+  const drag = tileDrag;
+  drag.ghost.style.transform = `translate(${event.clientX-drag.x}px,${event.clientY-drag.y}px) scale(1.04)`;
+  drag.target?.classList.remove('tile-drop-target');
+  const target = document.elementFromPoint(event.clientX,event.clientY)?.closest('#listCards > .list-card');
+  drag.target = target && target !== drag.card ? target : null;
+  drag.target?.classList.add('tile-drop-target');
+}, {passive:false});
+for (const type of ['pointerup','pointercancel']) window.addEventListener(type, finishTileDrag);
+window.addEventListener('blur', () => {
+  if (tileDrag) finishTileDrag({pointerId:tileDrag.pointerId,type:'pointercancel'});
+});
+listCards.addEventListener('click', event => {
+  if (Date.now() < suppressTileClickUntil) {
+    event.preventDefault();event.stopImmediatePropagation();return;
+  }
+  if (!tileEditing) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  const card = event.target.closest('.list-card');
+  if (card && event.target.closest('.list-trash')) {
+    const list = state.lists.find(list => list.id === card.dataset.list);
+    if (list) removeList(list);
+  }
+}, true);
+listCards.addEventListener('keydown', event => {
+  if (!tileEditing || !event.target.matches('.list-card > summary')) return;
+  const offsets = {ArrowLeft:-1,ArrowUp:-1,ArrowRight:1,ArrowDown:1};
+  if (!(event.key in offsets)) return;
+  event.preventDefault();
+  const id = event.target.closest('.list-card').dataset.list;
+  const from = state.lists.findIndex(list => list.id === id);
+  const to = from + offsets[event.key];
+  if (to < 0 || to >= state.lists.length) return;
+  const [list] = state.lists.splice(from,1);
+  state.lists.splice(to,0,list);save();render();fitListOverview();
+  [...listCards.children].find(card => card.dataset.list === id)?.querySelector('summary').focus();
+});
 document.addEventListener('keydown', event => {
-  if (event.key === 'Escape') hideListTrash();
+  if (event.key === 'Escape' && tileEditing && $('#overlay').hidden) exitTileEditMode();
 });
 $('#closeModal').onclick=closeModal;$('#overlay').addEventListener('click',e=>{if(e.target===$('#overlay'))closeModal();});document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#overlay').hidden)closeModal();});
 $('#listCards').addEventListener('click',e=>{const card=e.target.closest('.list-card');if(!card)return;state.activeId=card.dataset.list;const item=e.target.closest('[data-act]');if(item){if(item.dataset.act==='toggle')toggleItem(item.dataset.id);if(item.dataset.act==='edit')itemModal(item.dataset.id);return;}const action=e.target.closest('[data-card-action]')?.dataset.cardAction;if(['new-week','reroll-day','save-week','copy-week','share-week','ingredients-week'].includes(action))return weekAction(active(),action,e.target.closest('[data-card-action]'));if(action==='clear-done')return clearDone(active());if(action==='menu')listModal();if(action==='scan')scanModal();if(action==='dictate')dictationModal(card.dataset.list);if(action==='share')pairModal();if(action==='recipe')recipeImportModal();if(action==='copy-gurkerl')copyCurrent();if(action==='export')exportModal();});
@@ -1043,7 +1073,7 @@ $('#newListBtn').onclick=newListModal;$('#settingsBtn').onclick=settingsModal;
 $('#scanFile').onchange=e=>{handleImage(e.target.files?.[0]);e.target.value='';};$('#backupFile').onchange=e=>{restore(e.target.files?.[0]);e.target.value='';};
 if(window.AndroidEinkauf && 'serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.unregister())).catch(()=>{});}else if('serviceWorker' in navigator && location.protocol.startsWith('http')){navigator.serviceWorker.register('./sw.js').catch(console.warn);}
 window.addEventListener('online',()=>{if(firebaseReady){flushPending();render();}else if(cloud&&window.firebase&&firebase.auth().currentUser)applyUser(firebase.auth().currentUser);else if(!firebaseBusy&&window.WOHIN_FIREBASE_CONFIG)initFirebase();});window.addEventListener('offline',render);
-window.einkaufAndroidBack=()=>{const deletion=$('.delete-dialog[open]');if(deletion){deletion.close('cancel');return true;}if(trashPreview){hideListTrash();return true;}if(!$('#overlay').hidden){closeModal();return true;}return false;};
+window.einkaufAndroidBack=()=>{const deletion=$('.delete-dialog[open]');if(deletion){deletion.close('cancel');return true;}if(tileEditing){exitTileEditMode();return true;}if(!$('#overlay').hidden){closeModal();return true;}return false;};
 window.addEventListener('resize', fitListOverview);
 render();initFirebase();
 })();
